@@ -46,6 +46,6 @@ See [Example](https://pkg.go.dev/github.com/fardream/gitrim#example-package)
 ## CLI
 
 - [filter-git-hist](cmd/filter-git-hist) filters the history of a git repo and output it to another git repo.
-- [expand-git-commit](cmd/expand-git-commit] expands the new commit back to the original repo.
+- [expand-git-commit](cmd/expand-git-commit) expands the new commit back to the original repo.
 - [dump-git-tree](cmd/dump-git-tree) prints the files of a branch/tree/commit/head. Optionally filters can be applied.
 - [remve-git-gpg](cmd/remove-git-gpg) removes gpg signatures for commits.
