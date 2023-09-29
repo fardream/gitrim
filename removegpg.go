@@ -9,30 +9,49 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
+// RemoveGPGForLinearHistory removes gpg signature from the commits and save the new commits into s.
 func RemoveGPGForLinearHistory(ctx context.Context, hist []*object.Commit, s storer.Storer) ([]*object.Commit, error) {
-	newhist := make([]*object.Commit, 0, len(hist))
+	return RemoveGPGForDFSPath(ctx, hist, s)
+}
 
-	var prevcommit *object.Commit
+// RemoveGPGForDFSPath removes gpg signatures from a depth first search graph and save the nwe commits into s.
+func RemoveGPGForDFSPath(ctx context.Context, dfspath []*object.Commit, s storer.Storer) ([]*object.Commit, error) {
+	newpath := make([]*object.Commit, 0, len(dfspath))
 
-	for i, v := range hist {
+	fromorigtonew := make(map[plumbing.Hash]*object.Commit)
+
+	n := len(dfspath)
+
+	for i, c := range dfspath {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
 		}
-
-		var parenthashses []plumbing.Hash
-		if prevcommit == nil {
-			parenthashses = append(parenthashses, v.ParentHashes[0])
-		} else {
-			parenthashses = append(parenthashses, prevcommit.Hash)
+		if c == nil {
+			continue
 		}
+
+		parents := make([]plumbing.Hash, 0, c.NumParents())
+		seen := make(map[plumbing.Hash]empty)
+	addparentloop:
+		for j := 0; j < c.NumParents(); j++ {
+			if newparent, found := fromorigtonew[c.ParentHashes[j]]; !found {
+				continue addparentloop
+			} else if newparent != nil {
+				if _, found := seen[newparent.Hash]; !found {
+					parents = append(parents, newparent.Hash)
+					seen[newparent.Hash] = empty{}
+				}
+			}
+		}
+
 		newcommit := &object.Commit{
-			Author:       v.Author,
-			Committer:    v.Committer,
-			Message:      v.Message,
-			TreeHash:     v.TreeHash,
-			ParentHashes: parenthashses,
+			Author:       c.Author,
+			Committer:    c.Committer,
+			Message:      c.Message,
+			TreeHash:     c.TreeHash,
+			ParentHashes: parents,
 		}
 
 		newcommithash, err := GetHash(newcommit)
@@ -40,14 +59,15 @@ func RemoveGPGForLinearHistory(ctx context.Context, hist []*object.Commit, s sto
 			return nil, fmt.Errorf("failed to get hash for new commit: %w", err)
 		}
 		newcommit.Hash = *newcommithash
-		logger.Debug("remove gpgp", "id", i, "commit", v.Hash, "newcommit", newcommit.Hash)
+		logger.Debug("remove gpgp", "id", i, "total", n, "commit", c.Hash, "newcommit", newcommit.Hash)
+
 		if err := updateHashAndSave(ctx, newcommit, s); err != nil {
 			return nil, fmt.Errorf("failed to save new commit %s to storage: %w", newcommit.Hash.String(), err)
 		}
 
-		newhist = append(newhist, newcommit)
-		prevcommit = newcommit
+		newpath = append(newpath, newcommit)
+		fromorigtonew[c.Hash] = newcommit
 	}
 
-	return newhist, nil
+	return newpath, nil
 }

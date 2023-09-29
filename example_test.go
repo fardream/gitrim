@@ -12,7 +12,7 @@ import (
 	"github.com/fardream/gitrim"
 )
 
-func orPanic(err error) {
+func OrPanic(err error) {
 	if err != nil {
 		log.Panic(err)
 	}
@@ -29,15 +29,15 @@ func Example() {
 	r, err := git.Clone(memory.NewStorage(), nil, &git.CloneOptions{
 		URL: url,
 	})
-	orPanic(err)
+	OrPanic(err)
 
 	// find the commit
 	headcommit, err := r.CommitObject(headcommithash)
-	orPanic(err)
+	OrPanic(err)
 
 	// obtain the history of the repo.
 	hist, err := gitrim.GetLinearHistory(context.Background(), headcommit, plumbing.ZeroHash, 10)
-	orPanic(err)
+	OrPanic(err)
 
 	// select 3 files
 	orfilter, err := gitrim.NewOrFilterForPatterns(
@@ -45,13 +45,13 @@ func Example() {
 		"LICENSE",
 		"capis.go",
 	)
-	orPanic(err)
+	OrPanic(err)
 
 	// output storer
 	outputfs := memory.NewStorage()
 
 	newhist, err := gitrim.FilterLinearHistory(context.Background(), hist, outputfs, orfilter)
-	orPanic(err)
+	OrPanic(err)
 
 	// Note the result is deterministic
 	fmt.Printf("From %d commits, generated %d commits.\nHead commit is:\n", len(hist), len(newhist))

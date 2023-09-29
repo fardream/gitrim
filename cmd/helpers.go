@@ -80,9 +80,9 @@ func MustHash(s string) plumbing.Hash {
 
 // HistCmd are command components used to get history
 type HistCmd struct {
-	NumCommit   int
-	EndCommit   string
-	StartCommit string
+	NumCommit    int
+	EndCommit    string
+	StartCommits []string
 }
 
 // GetHistory returns the linear history
@@ -94,9 +94,9 @@ func (c *HistCmd) GetHistory(ctx context.Context, s storer.Storer) []*object.Com
 	}
 	endHash := head.Hash()
 
-	var startHash plumbing.Hash
-	if c.StartCommit != "" {
-		startHash = plumbing.NewHash(c.StartCommit)
+	var startHash []plumbing.Hash
+	for _, commitHash := range c.StartCommits {
+		startHash = append(startHash, MustHash(commitHash))
 	}
 
 	if c.EndCommit != "" {
@@ -107,7 +107,7 @@ func (c *HistCmd) GetHistory(ctx context.Context, s storer.Storer) []*object.Com
 
 	headcommit := GetOrPanic(object.GetCommit(s, endHash))
 
-	return GetOrPanic(gitrim.GetLinearHistory(ctx, headcommit, startHash, c.NumCommit))
+	return GetOrPanic(gitrim.GetDFSPath(ctx, headcommit, startHash, c.NumCommit))
 }
 
 // SetBranchCmd is for output the commit to a branch and potentially set it to head.

@@ -45,7 +45,7 @@ func newCmd() *Cmd {
 
 	c.Flags().IntVarP(&c.NumCommit, "num-commit", "n", c.NumCommit, "number of commits to seek back")
 	c.Flags().StringVarP(&c.EndCommit, "end-commit", "e", c.EndCommit, "commit hash (default to head)")
-	c.Flags().StringVarP(&c.StartCommit, "start-commit", "s", c.StartCommit, "commit hash to start from, default to empty, and history will seek to root unless restricted by number of commit")
+	c.Flags().StringArrayVarP(&c.StartCommits, "start-commit", "s", c.StartCommits, "commit hash to start from, default to empty, and history will seek to root unless restricted by number of commit")
 
 	c.Flags().StringVar(&c.Branch, "branch", c.Branch, "branch to set the head to")
 	c.Flags().BoolVar(&c.SetHead, "set-head", c.SetHead, "set the generated commit history as the head")
@@ -67,7 +67,7 @@ func (c *Cmd) run(*cobra.Command, []string) {
 
 	hist := c.GetHistory(ctx, inputfs)
 
-	newhist := cmd.GetOrPanic(gitrim.RemoveGPGForLinearHistory(ctx, hist, inputfs))
+	newhist := cmd.GetOrPanic(gitrim.RemoveGPGForDFSPath(ctx, hist, inputfs))
 
 	c.SetBrancHeadFromHistory(inputfs, newhist)
 }

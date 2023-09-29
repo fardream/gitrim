@@ -11,41 +11,46 @@ import (
 
 // FilterCommit creates a new [object.Commit] in the given [storer.Storer]
 // by applying filters to the tree in the input [object.Commit].
-// Optionally a parent commit can set on the generated commit.
+// Optionally parent commits can set on the generated commit.
 // The author info, committor info, commit message will be copied from the input commit.
 // Howver, GPG sign information will be dropped.
+// The function returns three values, the new commit, a boolean indicating if the returned commit is actually parent containing the same tree, or an error.
 //
-//   - If after filtering, the tree is empty, a nil will be returned, and error will also be nil.
-//   - If the generated tree is exactly the same as the parent's, the parent commit will be returned and no new commit will be generated.
+//   - If after filtering, the tree is empty, a nil will be returned, isparent will be set to false, and error will also be nil.
+//   - If the generated tree is exactly the same as the parent's, the parent commit will be returned, isparent bool will be set to true.
 //
 // Submodules will be silently ignored.
 func FilterCommit(
 	ctx context.Context,
 	c *object.Commit,
-	parent *object.Commit,
+	parents []*object.Commit,
 	s storer.Storer,
 	filters Filter,
-) (*object.Commit, error) {
+) (*object.Commit, bool, error) {
 	t, err := c.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain tree for commit %s: %w", c.Hash.String(), err)
+		return nil, false, fmt.Errorf("failed to obtain tree for commit %s: %w", c.Hash.String(), err)
 	}
 
 	newtree, err := FilterTree(ctx, t, nil, s, filters)
 	if err != nil {
-		return nil, errorf(err, "failed to filter tree: %w", err)
+		return nil, false, errorf(err, "failed to filter tree: %w", err)
 	}
 
 	if newtree == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	var parents []plumbing.Hash
-	if parent != nil {
-		if parent.TreeHash == newtree.Hash {
-			return parent, nil
+	var parenthashes []plumbing.Hash
+
+	for _, parent := range parents {
+		if parent == nil {
+			continue
 		}
-		parents = append(parents, parent.Hash)
+		if parent.TreeHash == newtree.Hash {
+			return parent, true, nil
+		}
+		parenthashes = append(parenthashes, parent.Hash)
 	}
 
 	newcommit := &object.Commit{
@@ -53,19 +58,19 @@ func FilterCommit(
 		Author:       c.Author,
 		Committer:    c.Committer,
 		Message:      c.Message,
-		ParentHashes: parents,
+		ParentHashes: parenthashes,
 	}
 
 	newhash, err := GetHash(newcommit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain new hash for commit: %w ", err)
+		return nil, false, fmt.Errorf("failed to obtain new hash for commit: %w ", err)
 	}
 
 	newcommit.Hash = *newhash
 
 	if err := updateHashAndSave(ctx, newcommit, s); err != nil {
-		return nil, errorf(err, "failed to save commit: %w", err)
+		return nil, false, errorf(err, "failed to save commit: %w", err)
 	}
 
-	return newcommit, nil
+	return newcommit, false, nil
 }
