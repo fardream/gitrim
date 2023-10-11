@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package gitrim.svc;
+
+option go_package = "github.com/fardream/gitrim/svc";
+
+// GitRepoIdentifier is a combination of [organization or user]/[repo-name] on a
+// [remote_url], which uniquely identify a repo on a given server running git
+// services, such as "user/repo" on "github.com".
+message GitRepoIdentifier {
+  string remote_name = 1;
+  string owner = 2;
+  string repo = 3;
+}
+
+// Filter contains the filters for a given sync-ing operation. It contains the
+// raw_text and the canonical_filters which removes the comments/whitespaces and
+// unsupported filters from the raw_text and lexigraphically sorted into a list
+// of strings. Filter is considered changed if and only if canonical_filters are
+// changed.
+// Changing filter means a new repo, and the whole history of the sub repo will
+// need to be rebuilt.
+message Filter {
+  // raw text of the filter.
+  string raw_text = 1;
+
+  // canonical_filters contained in the filter.
+  repeated string canonical_filters = 2;
+}
+
+// RepoSync contains the information about sync-ing commits from a repo into a
+// repo after files/trees are filtered by the provided filter.
+//
+// Each RepoSync contains an id, which is a hash of the two repos/branch.
+message RepoSync {
+  // Id of the repo sync
+  string id = 1;
+  // Repo of the original/unfiltered data
+  GitRepoIdentifier from_repo = 11;
+  // Branch to sync data from.
+  string from_branch = 12;
+
+  // Repo of the filtered data.
+  GitRepoIdentifier to_repo = 21;
+  // Branch of the filtered data.
+  string to_branch = 22;
+
+  // Filter for this sync
+  Filter filter = 31;
+
+  // commits in the unfiltered repo that will be considered the root commits of
+  // the new repo after filtering.
+  //
+  // Root commits are just commits without parent commits.
+  // The filter process walk the commit graph from the head of the from_branch,
+  // and if it sees those commits listed here, it will stop the walk and set the
+  // generated/filtered commits to zero parents - so they will become root
+  // commits in the filtered repo.
+  repeated string root_commits = 41;
+
+  // head commit when the repo sync was first created. This, together with the
+  // root_commits, are useful when filters of the commits changed.
+  string init_head_commit = 42;
+}
+
+message PullRequestInfo {
+  GitRepoIdentifier repo = 1;
+  string identifier = 2;
+}
+
+// GiTrim
+service GiTrim {
+  // InitRepoSync setup the sync-ing between two repos
+  rpc InitRepoSync(InitRepoSyncRequest) returns (InitRepoSyncResponse) {}
+
+  // SyncToSubRepo syncs from the original repo to the sub repo.
+  rpc SyncToSubRepo(SyncToSubRepoRequest) returns (SyncToSubRepoResponse) {}
+
+  // CommitFromSubRepo tries to sends a commit from a sub repo to the original
+  // repo.
+  //
+  // The commit will be rejected if:
+  //   - the parent of commit is now head that is sync-ed from original repo.
+  //   - the modification contained in the repo is rejected by the filter.
+  //   - the commit contains gpg signatures.
+  //
+  // Note request cannot contain multiple commits.
+  rpc CommitFromSubRepo(CommitFromSubRepoRequest)
+      returns (CommitFromSubRepoResponse) {}
+
+  // CheckCommitFromSubRepo checks if the commit will be accepted into the
+  // original repo.
+  //
+  // The commit will be rejected if:
+  //   - the parent of commit is now head that is sync-ed from original repo.
+  //   - the modification contained in the repo is rejected by the filter.
+  //   - the commit contains gpg signatures.
+  rpc CheckCommitFromSubRepo(CheckCommitFromSubRepoRequest)
+      returns (CheckCommitFromSubRepoResponse) {}
+}
+
+message InitRepoSyncRequest {
+  GitRepoIdentifier from_repo = 11;
+  string from_branch = 12;
+
+  GitRepoIdentifier to_repo = 21;
+  string to_branch = 22;
+
+  string filter = 31;
+
+  // commits in the unfiltered repo that will be considered the root commits of
+  // the new repo after filtering.
+  //
+  // Root commits are just commits without parent commits.
+  // The filter process walk the commit graph from the head of the from_branch,
+  // and if it sees those commits listed here, it will stop the walk and set the
+  // generated/filtered commits to zero parents - so they will become root
+  // commits in the filtered repo.
+  repeated string root_commits = 41;
+
+  // max depth from the head
+  int64 max_depth = 42;
+}
+
+message InitRepoSyncResponse {
+  string id = 1;
+  string secret = 2;
+}
+
+message SyncToSubRepoRequest {}
+message SyncToSubRepoResponse {}
+
+message CommitFromSubRepoRequest {}
+message CommitFromSubRepoResponse {}
+
+message CheckCommitFromSubRepoRequest {}
+message CheckCommitFromSubRepoResponse {}

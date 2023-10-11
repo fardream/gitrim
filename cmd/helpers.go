@@ -30,6 +30,7 @@ func Logger() *slog.Logger {
 // OrPanic panics if err is not nil
 func OrPanic(err error) {
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
 		logger.Error("error", "err", err)
 		os.Exit(1)
 	}

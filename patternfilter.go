@@ -3,6 +3,7 @@ package gitrim
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -282,6 +283,8 @@ func LoadPatternFilterFromString(str string, ignoreUnsupported bool) ([]*Pattern
 
 // LoadPatternStringFromString loads from the string content of a pattern file like .gitignore.
 // Similar to [LoadPatternFilterFromString], a false ignoreUnsupported will error if unsupported patterns are encountered.
+//
+// The result are lexigraphically sorted with [slices.Sort] and then feed into [slices.Compact] to remove duplicates.
 func LoadPatternStringFromString(str string, ignoreUnsupported bool) ([]string, error) {
 	lines := strings.Split(str, "\n")
 	result := make([]string, 0, len(lines))
@@ -301,6 +304,9 @@ func LoadPatternStringFromString(str string, ignoreUnsupported bool) ([]string, 
 
 		result = append(result, line)
 	}
+
+	slices.Sort(result)
+	result = slices.Compact(result)
 
 	return result, nil
 }
