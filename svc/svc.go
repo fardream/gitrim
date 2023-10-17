@@ -1,3 +1,4 @@
+// svc contains a service that can handle filtering repos on different git providers.
 package svc
 
 import (
@@ -18,13 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type Svc interface {
-	GiTrimServer
-
-	Start(context.Context) error
-}
-
-type svc struct {
+type Svc struct {
 	// config of the server.
 	config *GiTrimConfig
 
@@ -38,25 +33,23 @@ type svc struct {
 	// we are going to risk it.
 	UnsafeGiTrimServer
 
-	idBlock cipher.Block
+	encryptor cipher.AEAD
 }
 
-func (*svc) SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error) {
+func (*Svc) SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SyncToSubRepo not implemented")
 }
 
-func (*svc) CommitFromSubRepo(context.Context, *CommitFromSubRepoRequest) (*CommitFromSubRepoResponse, error) {
+func (*Svc) CommitFromSubRepo(context.Context, *CommitFromSubRepoRequest) (*CommitFromSubRepoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CommitFromSubRepo not implemented")
 }
 
-func (*svc) CheckCommitFromSubRepo(context.Context, *CheckCommitFromSubRepoRequest) (*CheckCommitFromSubRepoResponse, error) {
+func (*Svc) CheckCommitFromSubRepo(context.Context, *CheckCommitFromSubRepoRequest) (*CheckCommitFromSubRepoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckCommitFromSubRepo not implemented")
 }
 
-var _ GiTrimServer = (*svc)(nil)
-
-func New(cfg *GiTrimConfig) (Svc, error) {
-	svc := &svc{config: cfg}
+func New(cfg *GiTrimConfig) (*Svc, error) {
+	svc := &Svc{config: cfg}
 	if svc.config.Remotes == nil {
 		svc.config.Remotes = make(map[string]*RemoteConfig)
 	}
@@ -71,7 +64,7 @@ func New(cfg *GiTrimConfig) (Svc, error) {
 	return svc, nil
 }
 
-func (s *svc) HttpServerMux() (*http.ServeMux, error) {
+func (s *Svc) HttpServerMux() (*http.ServeMux, error) {
 	if s.webhookMutex != nil {
 		return s.webhookMutex, nil
 	}
@@ -93,15 +86,15 @@ func (s *svc) HttpServerMux() (*http.ServeMux, error) {
 	return m, nil
 }
 
-func (s *svc) cleanup() error {
-	if err := s.cleanUpDb(); err != nil {
+func (s *Svc) Close() error {
+	if err := s.closeDb(); err != nil {
 		return err
 	}
 	return nil
 }
 
 // Start a server
-func (s *svc) Start(ctx context.Context) error {
+func (s *Svc) Start(ctx context.Context) error {
 	webhookHandler, err := s.HttpServerMux()
 	if err != nil {
 		return err
@@ -137,25 +130,17 @@ func (s *svc) Start(ctx context.Context) error {
 	slog.Info("launching webhooks", "addr", webhookSvc.Addr)
 
 	if err := webhookSvc.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		s.cleanup()
+		s.Close()
 		return err
 	}
 
 	wg.Wait()
 
-	s.cleanup()
+	s.Close()
 
 	return nil
 }
 
-func (s *svc) HandleNewPullRequest(ctx context.Context, pr *PullRequestInfo) error {
+func (s *Svc) HandleNewPullRequest(ctx context.Context, pr *PullRequestInfo) error {
 	return nil
-}
-
-func (s *svc) DeleteTmpDb() error {
-	s.cleanup()
-	if s.tmpDbPath == "" {
-		return nil
-	}
-	return os.RemoveAll(s.tmpDbPath)
 }

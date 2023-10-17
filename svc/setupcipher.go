@@ -2,6 +2,7 @@ package svc
 
 import (
 	"crypto/aes"
+	"crypto/cipher"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -9,11 +10,11 @@ import (
 
 var zeroKey []byte = make([]byte, 16)
 
-func (s *svc) setupCipher() error {
+// setupCipher
+func (s *Svc) setupCipher() error {
 	keyHex := s.config.AesKey
 	if keyHex == "" {
 		slog.Warn("empty cipher key")
-
 		keyHex = hex.EncodeToString(zeroKey)
 	}
 
@@ -31,7 +32,12 @@ func (s *svc) setupCipher() error {
 		return fmt.Errorf("failed to create id block: %w", err)
 	}
 
-	s.idBlock = b
+	v, err := cipher.NewGCM(b)
+	if err != nil {
+		return fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	s.encryptor = v
 
 	return nil
 }

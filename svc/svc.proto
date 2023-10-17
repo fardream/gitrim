@@ -61,6 +61,9 @@ message RepoSync {
   // head commit when the repo sync was first created. This, together with the
   // root_commits, are useful when filters of the commits changed.
   string init_head_commit = 42;
+
+  string last_sync_from_commit = 43;
+  string last_sync_to_commit = 44;
 }
 
 message PullRequestInfo {
@@ -70,7 +73,15 @@ message PullRequestInfo {
 
 // GiTrim
 service GiTrim {
-  // InitRepoSync setup the sync-ing between two repos
+  // InitRepoSync setup the sync-ing between two repos.
+  //
+  // The ID of the created repo will be sha256 hash of the following string
+  //
+  //   (from remote name)-(from owner name)-(from repo name)-(from branch)-(to
+  //   remote name)-(to owner name)-(to repo name)-(to branch)
+  //
+  // The operation will also generate a secret for git webhooks, the secret is
+  // generated from the id + 16 byte long salt.
   rpc InitRepoSync(InitRepoSyncRequest) returns (InitRepoSyncResponse) {}
 
   // SyncToSubRepo syncs from the original repo to the sub repo.
@@ -127,7 +138,11 @@ message InitRepoSyncResponse {
   string secret = 2;
 }
 
-message SyncToSubRepoRequest {}
+message SyncToSubRepoRequest {
+  string id = 1;
+  bool force = 3;
+}
+
 message SyncToSubRepoResponse {}
 
 message CommitFromSubRepoRequest {}

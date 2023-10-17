@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func (s *svc) FindRemoteInfo(name string) (*RemoteConfig, error) {
+func (s *Svc) FindRemoteInfo(name string) (*RemoteConfig, error) {
 	if s.config == nil || s.config.Remotes == nil {
 		return nil, errors.New("empty remotes")
 	}

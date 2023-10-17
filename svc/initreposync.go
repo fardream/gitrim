@@ -8,20 +8,17 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"go.etcd.io/bbolt"
 
 	"github.com/fardream/gitrim"
 )
 
-func (r *GitRepoIdentifier) strForId() string {
-	return fmt.Sprintf("%s-%s-%s", r.RemoteName, r.Owner, r.Repo)
-}
-
 func newRepoSyncId(fromRepo *GitRepoIdentifier, fromBranch string, toRepo *GitRepoIdentifier, toBranch string) (string, error) {
 	return fmt.Sprintf(
-		"%s-%s-%s-%s",
-		fromRepo.strForId(),
+		"%s-%s-%s-%s-%s-%s-%s-%s",
+		fromRepo.RemoteName, fromRepo.Owner, fromRepo.Repo,
 		fromBranch,
-		toRepo.strForId(),
+		toRepo.RemoteName, toRepo.Owner, toRepo.Repo,
 		toBranch), nil
 }
 
@@ -41,7 +38,7 @@ func verifyGitRepoIdentifier(repo *GitRepoIdentifier) error {
 	return nil
 }
 
-func (s *svc) verifyInitRepoSyncRequest(req *InitRepoSyncRequest) error {
+func (s *Svc) verifyInitRepoSyncRequest(req *InitRepoSyncRequest) error {
 	var err error
 	err = verifyGitRepoIdentifier(req.FromRepo)
 	if err != nil {
@@ -58,7 +55,7 @@ func (s *svc) verifyInitRepoSyncRequest(req *InitRepoSyncRequest) error {
 	return nil
 }
 
-func (s *svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*InitRepoSyncResponse, error) {
+func (s *Svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*InitRepoSyncResponse, error) {
 	err := s.verifyInitRepoSyncRequest(req)
 	if err != nil {
 		return nil, err
@@ -67,16 +64,9 @@ func (s *svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 	if err != nil {
 		return nil, err
 	}
-	idHex := sha256.Sum256([]byte(idraw))
+	id := sha256.Sum256([]byte(idraw))
 
-	idstr := hex.EncodeToString(idHex[:])
-
-	resp := &InitRepoSyncResponse{
-		Id:     idstr,
-		Secret: "",
-	}
-
-	reposync, err := getRepoSyncFromDb(s.mustGetDb(), idHex[:])
+	reposync, err := getRepoSyncFromDb(s.mustGetDb(), id[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if the database is already created: %w", err)
 	}
@@ -85,6 +75,15 @@ func (s *svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 		return nil, fmt.Errorf("sync-ing between the two repos already exists")
 	}
 
+	idstr := hex.EncodeToString(id[:])
+	secret, err := newSecret(s.encryptor, id[:])
+
+	resp := &InitRepoSyncResponse{
+		Id:     hex.EncodeToString(id[:]),
+		Secret: hex.EncodeToString(secret),
+	}
+
+	// create the canonical filter
 	filter, err := NewCanonicalFilter(req.Filter)
 	if err != nil {
 		return nil, err
@@ -135,23 +134,20 @@ func (s *svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 		return nil, fmt.Errorf("failed to get head commit for from branch %s: %w", branch.Hash(), err)
 	}
 
-	rootcommits := make([]plumbing.Hash, 0, len(req.RootCommits))
-	for _, r := range req.RootCommits {
-		rc, err := hex.DecodeString(r)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode sha of root commits: %w", err)
-		}
-
-		if len(rc) != 20 {
-			return nil, ErrInvalidCommitSHALength
-		}
-
-		rootcommits = append(rootcommits, plumbing.Hash(rc))
+	rootcommits, err := gitrim.DecodeHashHexes(req.RootCommits...)
+	if err != nil {
+		return nil, err
 	}
 
 	commits, err := gitrim.GetDFSPath(ctx, headcommit, rootcommits, int(req.MaxDepth))
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain commit graph from from repo: %w", err)
+	}
+
+	roots := gitrim.GetRoots(commits)
+
+	for _, r := range roots {
+		reposync.RootCommits = append(reposync.RootCommits, r.String())
 	}
 
 	f, err := gitrim.NewOrFilterForPatterns(filter.CanonicalFilters...)
@@ -163,24 +159,37 @@ func (s *svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 		return nil, fmt.Errorf("failed to filter commits according to filter: %w", err)
 	}
 
-	n := len(newcommits)
-	for i := 0; i < n; i++ {
-		v := newcommits[n-i-1]
-		if v != nil {
-			h := v.Hash
-			refname := plumbing.NewBranchReferenceName(towskp.branch)
-			ref := plumbing.NewHashReference(refname, h)
-			if err := towskp.storage.SetReference(ref); err != nil {
-				return nil, fmt.Errorf("failed to set to branch in to repo: %w", err)
-			}
-			break
-		}
+	newhead := gitrim.LastNonNilCommit(newcommits)
+	if newhead == nil {
+		return nil, ErrFilteredRepoEmpty
 	}
 
-	err = towskp.push(ctx)
+	h := newhead.Hash
+	refname := plumbing.NewBranchReferenceName(towskp.branch)
+	ref := plumbing.NewHashReference(refname, h)
+	if err := towskp.storage.SetReference(ref); err != nil {
+		return nil, fmt.Errorf("failed to set to branch in to repo: %w", err)
+	}
+
+	reposync.LastSyncFromCommit = commits[len(commits)-1].Hash.String()
+	reposync.LastSyncToCommit = newhead.Hash.String()
+
+	err = towskp.updateToLatest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to push: %w", err)
 	}
+
+	if err := s.db.Update(func(tx *bbolt.Tx) error {
+		if err := putSecretFunc(id[:], secret)(tx); err != nil {
+			return err
+		}
+
+		return putRepoSyncFunc(id[:], reposync)(tx)
+	}); err != nil {
+		return nil, err
+	}
+
+	s.db.Sync()
 
 	return resp, nil
 }

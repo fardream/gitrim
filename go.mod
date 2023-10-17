@@ -44,7 +44,7 @@ require (
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231009173412-8bfb1ae86b6c // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231012201019-e917dd12ba7a // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 

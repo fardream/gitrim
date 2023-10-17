@@ -16,4 +16,7 @@ var (
 	ErrEmptyFromRepo          = errors.New("empty from repo")
 	ErrInvalidCommitSHALength = errors.New("invalid commit sha length")
 	ErrInvalidBranch          = errors.New("invalid branch")
+	ErrNilDB                  = errors.New("nil db")
+	ErrSaltGenError           = errors.New("failed to generate salt")
+	ErrFilteredRepoEmpty      = errors.New("filtered repo is empty")
 )

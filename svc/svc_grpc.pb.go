@@ -29,7 +29,14 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type GiTrimClient interface {
-	// InitRepoSync setup the sync-ing between two repos
+	// InitRepoSync setup the sync-ing between two repos.
+	//
+	// The ID of the created repo will be sha256 hash of the following string
+	//
+	//	(from remote name)-(from owner name)-(from repo name)-(from branch)-(to
+	//	remote name)-(to owner name)-(to repo name)-(to branch)
+	//
+	// The operation will also generate a secret for git webhooks.
 	InitRepoSync(ctx context.Context, in *InitRepoSyncRequest, opts ...grpc.CallOption) (*InitRepoSyncResponse, error)
 	// SyncToSubRepo syncs from the original repo to the sub repo.
 	SyncToSubRepo(ctx context.Context, in *SyncToSubRepoRequest, opts ...grpc.CallOption) (*SyncToSubRepoResponse, error)
@@ -101,7 +108,14 @@ func (c *giTrimClient) CheckCommitFromSubRepo(ctx context.Context, in *CheckComm
 // All implementations must embed UnimplementedGiTrimServer
 // for forward compatibility
 type GiTrimServer interface {
-	// InitRepoSync setup the sync-ing between two repos
+	// InitRepoSync setup the sync-ing between two repos.
+	//
+	// The ID of the created repo will be sha256 hash of the following string
+	//
+	//	(from remote name)-(from owner name)-(from repo name)-(from branch)-(to
+	//	remote name)-(to owner name)-(to repo name)-(to branch)
+	//
+	// The operation will also generate a secret for git webhooks.
 	InitRepoSync(context.Context, *InitRepoSyncRequest) (*InitRepoSyncResponse, error)
 	// SyncToSubRepo syncs from the original repo to the sub repo.
 	SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error)
