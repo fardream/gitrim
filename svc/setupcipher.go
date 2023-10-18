@@ -5,7 +5,6 @@ import (
 	"crypto/cipher"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 )
 
 var zeroKey []byte = make([]byte, 16)
@@ -14,7 +13,7 @@ var zeroKey []byte = make([]byte, 16)
 func (s *Svc) setupCipher() error {
 	keyHex := s.config.AesKey
 	if keyHex == "" {
-		slog.Warn("empty cipher key")
+		logger.Warn("empty cipher key")
 		keyHex = hex.EncodeToString(zeroKey)
 	}
 

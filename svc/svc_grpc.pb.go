@@ -23,6 +23,7 @@ const (
 	GiTrim_SyncToSubRepo_FullMethodName          = "/gitrim.svc.GiTrim/SyncToSubRepo"
 	GiTrim_CommitFromSubRepo_FullMethodName      = "/gitrim.svc.GiTrim/CommitFromSubRepo"
 	GiTrim_CheckCommitFromSubRepo_FullMethodName = "/gitrim.svc.GiTrim/CheckCommitFromSubRepo"
+	GiTrim_GetRepoSync_FullMethodName            = "/gitrim.svc.GiTrim/GetRepoSync"
 )
 
 // GiTrimClient is the client API for GiTrim service.
@@ -36,7 +37,8 @@ type GiTrimClient interface {
 	//	(from remote name)-(from owner name)-(from repo name)-(from branch)-(to
 	//	remote name)-(to owner name)-(to repo name)-(to branch)
 	//
-	// The operation will also generate a secret for git webhooks.
+	// The operation will also generate a secret for git webhooks, the secret is
+	// generated from the id + 16 byte long salt.
 	InitRepoSync(ctx context.Context, in *InitRepoSyncRequest, opts ...grpc.CallOption) (*InitRepoSyncResponse, error)
 	// SyncToSubRepo syncs from the original repo to the sub repo.
 	SyncToSubRepo(ctx context.Context, in *SyncToSubRepoRequest, opts ...grpc.CallOption) (*SyncToSubRepoResponse, error)
@@ -58,6 +60,7 @@ type GiTrimClient interface {
 	//   - the modification contained in the repo is rejected by the filter.
 	//   - the commit contains gpg signatures.
 	CheckCommitFromSubRepo(ctx context.Context, in *CheckCommitFromSubRepoRequest, opts ...grpc.CallOption) (*CheckCommitFromSubRepoResponse, error)
+	GetRepoSync(ctx context.Context, in *GetRepoSyncRequest, opts ...grpc.CallOption) (*GetRepoSyncResponse, error)
 }
 
 type giTrimClient struct {
@@ -104,6 +107,15 @@ func (c *giTrimClient) CheckCommitFromSubRepo(ctx context.Context, in *CheckComm
 	return out, nil
 }
 
+func (c *giTrimClient) GetRepoSync(ctx context.Context, in *GetRepoSyncRequest, opts ...grpc.CallOption) (*GetRepoSyncResponse, error) {
+	out := new(GetRepoSyncResponse)
+	err := c.cc.Invoke(ctx, GiTrim_GetRepoSync_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GiTrimServer is the server API for GiTrim service.
 // All implementations must embed UnimplementedGiTrimServer
 // for forward compatibility
@@ -115,7 +127,8 @@ type GiTrimServer interface {
 	//	(from remote name)-(from owner name)-(from repo name)-(from branch)-(to
 	//	remote name)-(to owner name)-(to repo name)-(to branch)
 	//
-	// The operation will also generate a secret for git webhooks.
+	// The operation will also generate a secret for git webhooks, the secret is
+	// generated from the id + 16 byte long salt.
 	InitRepoSync(context.Context, *InitRepoSyncRequest) (*InitRepoSyncResponse, error)
 	// SyncToSubRepo syncs from the original repo to the sub repo.
 	SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error)
@@ -137,6 +150,7 @@ type GiTrimServer interface {
 	//   - the modification contained in the repo is rejected by the filter.
 	//   - the commit contains gpg signatures.
 	CheckCommitFromSubRepo(context.Context, *CheckCommitFromSubRepoRequest) (*CheckCommitFromSubRepoResponse, error)
+	GetRepoSync(context.Context, *GetRepoSyncRequest) (*GetRepoSyncResponse, error)
 	mustEmbedUnimplementedGiTrimServer()
 }
 
@@ -155,6 +169,9 @@ func (UnimplementedGiTrimServer) CommitFromSubRepo(context.Context, *CommitFromS
 }
 func (UnimplementedGiTrimServer) CheckCommitFromSubRepo(context.Context, *CheckCommitFromSubRepoRequest) (*CheckCommitFromSubRepoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckCommitFromSubRepo not implemented")
+}
+func (UnimplementedGiTrimServer) GetRepoSync(context.Context, *GetRepoSyncRequest) (*GetRepoSyncResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRepoSync not implemented")
 }
 func (UnimplementedGiTrimServer) mustEmbedUnimplementedGiTrimServer() {}
 
@@ -241,6 +258,24 @@ func _GiTrim_CheckCommitFromSubRepo_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GiTrim_GetRepoSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRepoSyncRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GiTrimServer).GetRepoSync(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GiTrim_GetRepoSync_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GiTrimServer).GetRepoSync(ctx, req.(*GetRepoSyncRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GiTrim_ServiceDesc is the grpc.ServiceDesc for GiTrim service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -263,6 +298,10 @@ var GiTrim_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckCommitFromSubRepo",
 			Handler:    _GiTrim_CheckCommitFromSubRepo_Handler,
+		},
+		{
+			MethodName: "GetRepoSync",
+			Handler:    _GiTrim_GetRepoSync_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

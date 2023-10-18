@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -36,9 +35,7 @@ type Svc struct {
 	encryptor cipher.AEAD
 }
 
-func (*Svc) SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SyncToSubRepo not implemented")
-}
+var _ GiTrimServer = (*Svc)(nil)
 
 func (*Svc) CommitFromSubRepo(context.Context, *CommitFromSubRepoRequest) (*CommitFromSubRepoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CommitFromSubRepo not implemented")
@@ -75,7 +72,7 @@ func (s *Svc) HttpServerMux() (*http.ServeMux, error) {
 	m.HandleFunc("/pr-hook", func(w http.ResponseWriter, r *http.Request) {
 		bs, err := io.ReadAll(r.Body)
 		if err != nil {
-			slog.Error("failed to read body", "err", err.Error())
+			logger.Error("failed to read body", "err", err.Error())
 		}
 
 		os.Stdout.Write(bs)
@@ -113,7 +110,7 @@ func (s *Svc) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 
-		slog.Info("shutdown requested")
+		logger.Info("shutdown requested")
 
 		ctx, cancel := context.WithTimeout(
 			context.Background(),
@@ -127,7 +124,7 @@ func (s *Svc) Start(ctx context.Context) error {
 		wg.Done()
 	}()
 
-	slog.Info("launching webhooks", "addr", webhookSvc.Addr)
+	logger.Info("launching webhooks", "addr", webhookSvc.Addr)
 
 	if err := webhookSvc.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		s.Close()

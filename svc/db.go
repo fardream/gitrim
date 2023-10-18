@@ -1,7 +1,6 @@
 package svc
 
 import (
-	"log/slog"
 	"os"
 
 	"go.etcd.io/bbolt"
@@ -82,7 +81,7 @@ func (s *Svc) setupDb() error {
 	if dbpath == "" {
 		dbpath, err = tempfile()
 		s.tmpDbPath = dbpath
-		slog.Warn("missing db path, use tmp path", "path", dbpath)
+		logger.Warn("missing db path, use tmp path", "path", dbpath)
 	}
 
 	db, err := bbolt.Open(dbpath, 0o600, nil)
@@ -101,7 +100,7 @@ func (s *Svc) closeDb() error {
 	}
 
 	if s.tmpDbPath != "" {
-		slog.Warn("missing db path, used tmp path", "path", s.tmpDbPath)
+		logger.Warn("missing db path, used tmp path", "path", s.tmpDbPath)
 	}
 
 	return s.db.Close()
@@ -110,7 +109,7 @@ func (s *Svc) closeDb() error {
 // mustGetDb returns the database for the service, panics if the database is nil.
 func (s *Svc) mustGetDb() *bbolt.DB {
 	if s.db == nil {
-		slog.Error("no db")
+		logger.Error("no db")
 		panic(ErrNilDB)
 	}
 
@@ -194,4 +193,30 @@ func putRepoSyncFunc(id []byte, reposync *RepoSync) func(tx *bbolt.Tx) error {
 
 		return reposyncbucket.Put(id, b)
 	}
+}
+
+func getSecretForId(db *bbolt.DB, id []byte) ([]byte, error) {
+	var s []byte
+	db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(ID_TO_SECRET_BUCKET))
+		if b == nil {
+			return nil
+		}
+
+		v := b.Get(id)
+		if v == nil {
+			return nil
+		}
+
+		s = make([]byte, len(v))
+		copy(s, v)
+
+		return nil
+	})
+
+	if len(s) == 0 {
+		return nil, ErrSecretNotFoundForId
+	}
+
+	return s, nil
 }

@@ -85,6 +85,7 @@ service GiTrim {
   rpc InitRepoSync(InitRepoSyncRequest) returns (InitRepoSyncResponse) {}
 
   // SyncToSubRepo syncs from the original repo to the sub repo.
+  //
   rpc SyncToSubRepo(SyncToSubRepoRequest) returns (SyncToSubRepoResponse) {}
 
   // CommitFromSubRepo tries to sends a commit from a sub repo to the original
@@ -108,6 +109,8 @@ service GiTrim {
   //   - the commit contains gpg signatures.
   rpc CheckCommitFromSubRepo(CheckCommitFromSubRepoRequest)
       returns (CheckCommitFromSubRepoResponse) {}
+
+  rpc GetRepoSync(GetRepoSyncRequest) returns (GetRepoSyncResponse) {}
 }
 
 message InitRepoSyncRequest {
@@ -150,3 +153,12 @@ message CommitFromSubRepoResponse {}
 
 message CheckCommitFromSubRepoRequest {}
 message CheckCommitFromSubRepoResponse {}
+
+message GetRepoSyncRequest {
+  string id = 1;
+}
+
+message GetRepoSyncResponse {
+  RepoSync repo_sync = 1;
+  string secret = 2;
+}

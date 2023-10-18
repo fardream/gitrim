@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -76,7 +75,7 @@ func (s *Svc) newWorkspace(
 	// storage
 	storage := memory.NewStorage()
 
-	slog.Info("cloning repo", "remote", url, "branch", branch)
+	logger.Info("cloning repo", "remote", url, "branch", branch)
 
 	// init a repo
 	repo, err := git.InitWithOptions(
@@ -127,7 +126,7 @@ func (w *workspace) fetch(ctx context.Context) error {
 
 	// check if the remote is empty.
 	if err != nil && errors.Is(err, transport.ErrEmptyRemoteRepository) {
-		slog.Warn("empty remote")
+		logger.Warn("empty remote")
 		w.isempty = true
 	} else if err != nil {
 		return fmt.Errorf("failed to clone: %w", err)
@@ -142,7 +141,7 @@ func (w *workspace) fetch(ctx context.Context) error {
 				plumbing.NewHashReference(
 					plumbing.NewBranchReferenceName(w.branch),
 					r.Hash())); err != nil {
-				slog.Warn("cannot set local branch", "branch", w.branch)
+				logger.Warn("cannot set local branch", "branch", w.branch)
 			}
 		}
 	}
@@ -161,7 +160,7 @@ func (w *workspace) updateToLatest(ctx context.Context) error {
 	case err != nil && !isuptodate:
 		return fmt.Errorf("failed to update the remote: %w", err)
 	case isuptodate:
-		slog.Warn("remote already updated")
+		logger.Warn("remote already updated")
 		fallthrough
 	default:
 		return nil

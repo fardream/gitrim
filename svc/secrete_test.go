@@ -9,7 +9,7 @@ import (
 )
 
 func TestSVC_newSecret(t *testing.T) {
-	secret := []byte("this is a secret")
+	secret := []byte("this is a secret") // exactly 16 bytes
 	toencode := []byte("this is a secret message")
 
 	b, err := aes.NewCipher(secret)
