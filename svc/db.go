@@ -39,25 +39,6 @@ func getFromDb[
 	return r, err
 }
 
-func putToDb[T any](db *bbolt.DB, bucket []byte, id []byte, v T, marshal func(v T) ([]byte, error)) error {
-	if db == nil {
-		return ErrNilDB
-	}
-
-	return db.Update(
-		func(tx *bbolt.Tx) error {
-			b, err := tx.CreateBucketIfNotExists(bucket)
-			if err != nil {
-				return err
-			}
-			data, err := marshal(v)
-			if err != nil {
-				return err
-			}
-			return b.Put(id, data)
-		})
-}
-
 // tempfile provides a temporary file, adopted from the example on [bbolt doc]
 //
 // [bbolt doc]: https://pkg.go.dev/go.etcd.io/bbolt#example-DB.Begin
@@ -80,6 +61,9 @@ func (s *Svc) setupDb() error {
 	var err error
 	if dbpath == "" {
 		dbpath, err = tempfile()
+		if err != nil {
+			return err
+		}
 		s.tmpDbPath = dbpath
 		logger.Warn("missing db path, use tmp path", "path", dbpath)
 	}
@@ -141,25 +125,6 @@ func getRepoSyncFromDb(
 		func(d []byte, v *RepoSync) error {
 			return proto.Unmarshal(d, v)
 		})
-}
-
-func putRepoSyncToDb(
-	db *bbolt.DB,
-	id []byte,
-	r *RepoSync,
-) error {
-	return putToDb(
-		db,
-		[]byte(REPO_SYNC_BUCKET),
-		id,
-		r,
-		func(v *RepoSync) ([]byte, error) {
-			return proto.Marshal(v)
-		})
-}
-
-func passByte(i []byte) ([]byte, error) {
-	return i, nil
 }
 
 func putSecretFunc(id []byte, secret []byte) func(tx *bbolt.Tx) error {

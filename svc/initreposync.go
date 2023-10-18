@@ -42,6 +42,9 @@ func (s *Svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 
 	idstr := hex.EncodeToString(id[:])
 	secret, err := newSecret(s.encryptor, id[:])
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to generate secret: %s", err.Error())
+	}
 
 	resp := &InitRepoSyncResponse{
 		Id:     hex.EncodeToString(id[:]),
@@ -75,7 +78,7 @@ func (s *Svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 		return nil, err
 	}
 
-	info, err := syncWksp(ctx, fromwksp, req.FromBranch, towskp, req.ToBranch, reposync.Filter.CanonicalFilters, req.RootCommits, req.MaxDepth)
+	info, err := syncWksp(ctx, fromwksp, req.FromBranch, towskp, req.ToBranch, reposync.Filter.CanonicalFilters, req.RootCommits, req.MaxDepth, true)
 	if err != nil {
 		return nil, err
 	}

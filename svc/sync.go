@@ -30,6 +30,7 @@ func syncWksp(
 	filters []string,
 	reqrootcommits []string,
 	maxdepth int64,
+	forcepush bool,
 ) (*syncInfo, error) {
 	result := &syncInfo{}
 
@@ -57,7 +58,7 @@ func syncWksp(
 
 	rootcommits, err := gitrim.DecodeHashHexes(reqrootcommits...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode root commits: %w", err)
 	}
 
 	commits, err := gitrim.GetDFSPath(ctx, headcommit, rootcommits, int(maxdepth))
@@ -68,7 +69,7 @@ func syncWksp(
 	roots := gitrim.GetRoots(commits)
 
 	for _, r := range roots {
-		result.RootCommits = append(result.RootCommits, r.String())
+		result.RootCommits = append(result.RootCommits, r.Hash.String())
 	}
 
 	f, err := gitrim.NewOrFilterForPatterns(filters...)
@@ -95,7 +96,7 @@ func syncWksp(
 	result.LastSyncFromCommit = commits[len(commits)-1].Hash.String()
 	result.LastSyncToCommit = newhead.Hash.String()
 
-	err = towksp.updateToLatest(ctx)
+	err = towksp.updateToLatest(ctx, forcepush)
 	if err != nil {
 		return nil, fmt.Errorf("failed to push: %w", err)
 	}

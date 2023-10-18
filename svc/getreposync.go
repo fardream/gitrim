@@ -8,7 +8,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (svc *Svc) GetRepoSync(ctx context.Context, request *GetRepoSyncRequest) (*GetRepoSyncResponse, error) {
+func (svc *Svc) GetRepoSync(
+	ctx context.Context,
+	request *GetRepoSyncRequest,
+) (*GetRepoSyncResponse, error) {
 	idHex := request.Id
 	id, err := hex.DecodeString(idHex)
 	if err != nil {

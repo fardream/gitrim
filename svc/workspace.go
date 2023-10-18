@@ -149,11 +149,18 @@ func (w *workspace) fetch(ctx context.Context) error {
 	return nil
 }
 
-func (w *workspace) updateToLatest(ctx context.Context) error {
+// updateToLatest push the changes to the remote
+func (w *workspace) updateToLatest(ctx context.Context, forcePush bool) error {
+	var forcewithlease *git.ForceWithLease
+	if forcePush {
+		forcewithlease = &git.ForceWithLease{}
+	}
 	err := w.repo.PushContext(
 		ctx,
 		&git.PushOptions{
-			Auth: w.auth,
+			Auth:           w.auth,
+			Force:          forcePush,
+			ForceWithLease: forcewithlease,
 		})
 	isuptodate := errors.Is(err, git.NoErrAlreadyUpToDate)
 	switch {

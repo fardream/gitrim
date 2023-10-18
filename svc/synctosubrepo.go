@@ -10,6 +10,7 @@ import (
 )
 
 func (s *Svc) SyncToSubRepo(ctx context.Context, request *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error) {
+	logger.Info("sync", "id", request.Id)
 	idHex := request.Id
 	id, err := hex.DecodeString(idHex)
 	if err != nil {
@@ -33,7 +34,7 @@ func (s *Svc) SyncToSubRepo(ctx context.Context, request *SyncToSubRepoRequest) 
 		return nil, status.Errorf(codes.Internal, "failed to obtain to repo: %s", err.Error())
 	}
 
-	info, err := syncWksp(ctx, fromwksp, reposync.FromBranch, towksp, reposync.ToBranch, reposync.Filter.CanonicalFilters, reposync.RootCommits, 0)
+	info, err := syncWksp(ctx, fromwksp, reposync.FromBranch, towksp, reposync.ToBranch, reposync.Filter.CanonicalFilters, reposync.RootCommits, 0, request.Force)
 	if err != nil {
 		return nil, err
 	}
