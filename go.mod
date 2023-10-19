@@ -9,7 +9,7 @@ require (
 	github.com/google/go-cmp v0.5.9
 	github.com/spf13/cobra v1.7.1-0.20230908172906-0c72800b8dba
 	go.etcd.io/bbolt v1.3.7
-	google.golang.org/grpc v1.58.3
+	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 )
 
