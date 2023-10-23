@@ -51,7 +51,7 @@ func NewFilteredDFS(
 ) (*FilteredDFS, error) {
 	n := len(dfspath)
 	result := &FilteredDFS{
-		FromDFS:     make([]*object.Commit, n),
+		FromDFS:     make([]*object.Commit, 0, n),
 		fromStorage: fromStorage,
 		ToDFS:       make([]*object.Commit, 0, n),
 		toStorage:   toStorage,
@@ -97,6 +97,8 @@ func (dfs *FilteredDFS) AppendCommits(
 		if _, found := dfs.FromToTo[c.Hash]; found {
 			continue
 		}
+
+		dfs.FromDFS = append(dfs.FromDFS, c)
 
 		parents := make([]*object.Commit, 0, c.NumParents())
 		seen := make(map[plumbing.Hash]empty)
