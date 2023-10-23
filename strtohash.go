@@ -2,9 +2,12 @@ package gitrim
 
 import (
 	"encoding/hex"
+	"errors"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
+
+var ErrHexStringTooShort = errors.New("hex encoded byte slice is too short for hash")
 
 // DecodeHashHex decodes a hex encoded sha1.
 // It differs from [plumbing.NewHash] for [plumbing.NewHash] doesn't
