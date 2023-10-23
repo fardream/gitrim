@@ -95,11 +95,6 @@ func (c *HistCmd) GetHistory(ctx context.Context, s storer.Storer) []*object.Com
 	}
 	endHash := head.Hash()
 
-	var startHash []plumbing.Hash
-	for _, commitHash := range c.StartCommits {
-		startHash = append(startHash, MustHash(commitHash))
-	}
-
 	if c.EndCommit != "" {
 		endHash = plumbing.NewHash(c.EndCommit)
 	}
@@ -108,7 +103,7 @@ func (c *HistCmd) GetHistory(ctx context.Context, s storer.Storer) []*object.Com
 
 	headcommit := GetOrPanic(object.GetCommit(s, endHash))
 
-	return GetOrPanic(gitrim.GetDFSPath(ctx, headcommit, startHash, c.NumCommit))
+	return GetOrPanic(gitrim.GetDFSPath(ctx, headcommit, GetOrPanic(gitrim.NewHashSetFromStrings(c.StartCommits...)), c.NumCommit))
 }
 
 // SetBranchCmd is for output the commit to a branch and potentially set it to head.

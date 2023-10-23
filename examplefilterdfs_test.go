@@ -50,7 +50,7 @@ func ExampleFilterDFSPath() {
 	headcommit, err := r.CommitObject(headcommithash)
 	FilterDFSPanic(err)
 
-	graph, err := gitrim.GetDFSPath(context.Background(), headcommit, []plumbing.Hash{plumbing.NewHash("99e2f85843878671b028d4d01bd4668676226dd1")}, 90)
+	graph, err := gitrim.GetDFSPath(context.Background(), headcommit, gitrim.MustNewHashSetFromStrings("99e2f85843878671b028d4d01bd4668676226dd1"), 90)
 
 	FilterDFSPanic(err)
 

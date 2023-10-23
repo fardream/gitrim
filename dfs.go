@@ -72,7 +72,7 @@ func (gb *dfsBuilder) top() *dfsBuilderNode {
 func GetDFSPath(
 	ctx context.Context,
 	head *object.Commit,
-	rootcommits []plumbing.Hash,
+	roots HashSet,
 	maxGeneration int,
 ) ([]*object.Commit, error) {
 	result := make([]*object.Commit, 0)
@@ -80,9 +80,8 @@ func GetDFSPath(
 
 	gb.add(head, 0)
 
-	roots := make(map[plumbing.Hash]empty)
-	for _, r := range rootcommits {
-		roots[r] = empty{}
+	if roots == nil {
+		roots = make(map[plumbing.Hash]empty)
 	}
 
 	if maxGeneration <= 0 {

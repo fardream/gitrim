@@ -56,7 +56,7 @@ func syncWksp(
 	}
 	result.InitHeadCommit = headcommit.String()
 
-	rootcommits, err := gitrim.DecodeHashHexes(reqrootcommits...)
+	rootcommits, err := gitrim.NewHashSetFromStrings(reqrootcommits...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode root commits: %w", err)
 	}
