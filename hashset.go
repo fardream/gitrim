@@ -1,6 +1,8 @@
 package gitrim
 
 import (
+	"maps"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -53,4 +55,15 @@ func NewHashSetFromCommits(commits []*object.Commit) HashSet {
 		result[c.Hash] = empty{}
 	}
 	return result
+}
+
+// CombineHashSets multiple [HashSet] into one
+func CombineHashSets(hashsets ...HashSet) HashSet {
+	r := make(HashSet)
+
+	for _, h := range hashsets {
+		maps.Copy(r, h)
+	}
+
+	return r
 }

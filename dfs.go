@@ -1,7 +1,11 @@
+// dfs contains a depth first search algo.
+// The search is done through a stack.
+
 package gitrim
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -43,9 +47,11 @@ func (gb *dfsBuilder) add(v *object.Commit, generation int) {
 	})
 }
 
+var ErrEmptyDFSBuilderStack = errors.New("failed to pop empty stack")
+
 func (gb *dfsBuilder) pop() error {
 	if len(gb.stack) == 0 {
-		return fmt.Errorf("failed to pop empty stack")
+		return ErrEmptyDFSBuilderStack
 	}
 
 	gb.stack = gb.stack[:len(gb.stack)-1]
@@ -75,13 +81,14 @@ func GetDFSPath(
 	roots HashSet,
 	maxGeneration int,
 ) ([]*object.Commit, error) {
-	result := make([]*object.Commit, 0)
+	var result []*object.Commit
+
 	gb := newDFSBuilder()
 
 	gb.add(head, 0)
 
 	if roots == nil {
-		roots = make(map[plumbing.Hash]empty)
+		roots = make(HashSet)
 	}
 
 	if maxGeneration <= 0 {
@@ -104,22 +111,14 @@ addloop:
 
 		_, isroot := roots[current.data.Hash]
 		switch {
-		case current.nextvisit == current.nparent:
+		case current.nextvisit == current.nparent || // exhausted current parent
+			isroot || // is root
+			current.generation >= maxGeneration-1: // reached max generation
 			result = append(result, current.data)
 			if err := gb.pop(); err != nil {
 				return nil, err
 			}
-		case isroot:
-			result = append(result, current.data)
-			if err := gb.pop(); err != nil {
-				return nil, err
-			}
-		case current.generation >= maxGeneration-1:
-			result = append(result, current.data)
-			if err := gb.pop(); err != nil {
-				return nil, err
-			}
-		default:
+		default: // need to visit parent
 			p, err := current.data.Parent(current.nextvisit)
 			if err != nil {
 				return nil, fmt.Errorf(

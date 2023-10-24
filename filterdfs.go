@@ -30,5 +30,5 @@ func FilterDFSPath(
 		return nil, err
 	}
 
-	return r.ToDFS, nil
+	return r.ToDFS.GetPath()
 }
