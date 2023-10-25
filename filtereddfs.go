@@ -32,9 +32,15 @@ func NewLazyCommit(c *object.Commit) *LazyCommit {
 	}
 }
 
+var ErrNilStorer = errors.New("nil storer.Storer")
+
 func (l *LazyCommit) GetCommit() (*object.Commit, error) {
 	if l.c != nil {
 		return l.c, nil
+	}
+
+	if l.s == nil {
+		return nil, ErrNilStorer
 	}
 
 	c, err := object.GetCommit(l.s, l.Hash)
@@ -74,7 +80,7 @@ func (k *KeyedDFSPath) AddCommit(c *object.Commit) {
 	if v, found := k.HashToCommit[c.Hash]; found {
 		v.c = c
 	} else {
-		lz := &LazyCommit{c: c, Hash: c.Hash, s: k.s}
+		lz := NewLazyCommit(c)
 		k.Path = append(k.Path, lz)
 		k.HashToCommit[lz.Hash] = lz
 	}
@@ -117,6 +123,11 @@ func (k *KeyedDFSPath) GetPath() ([]*object.Commit, error) {
 	}
 
 	return result, nil
+}
+
+func (k *KeyedDFSPath) HasCommit(h plumbing.Hash) bool {
+	_, r := k.HashToCommit[h]
+	return r
 }
 
 // FilteredDFS contains the mapping between a DFS path from the original repo and the filtered repo.
@@ -179,7 +190,7 @@ func NewFilteredDFS(
 ) (*FilteredDFS, error) {
 	result := NewEmptyFilteredDFS(fromStorage, toStorage, filter)
 
-	err := result.AppendCommits(ctx, dfspath)
+	_, err := result.AppendCommits(ctx, dfspath)
 	if err != nil {
 		return nil, err
 	}
@@ -199,12 +210,12 @@ var (
 func (dfs *FilteredDFS) AppendCommits(
 	ctx context.Context,
 	morecommits []*object.Commit,
-) error {
+) ([]*object.Commit, error) {
 	if dfs.toStorage == nil {
-		return ErrNilToStorage
+		return nil, ErrNilToStorage
 	}
 	if dfs.filter == nil {
-		return ErrEmptyFilter
+		return nil, ErrEmptyFilter
 	}
 	if dfs.FromToTo == nil {
 		dfs.FromToTo = make(map[plumbing.Hash]plumbing.Hash)
@@ -218,10 +229,11 @@ func (dfs *FilteredDFS) AppendCommits(
 
 	n := len(morecommits)
 
+	result := make([]*object.Commit, 0, n)
 	for i, vc := range morecommits {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return result, ctx.Err()
 		default:
 		}
 
@@ -232,7 +244,7 @@ func (dfs *FilteredDFS) AppendCommits(
 		}
 
 		// skip the commit if it already processed
-		if _, found := dfs.FromToTo[vc.Hash]; found {
+		if dfs.FromDFS.HasCommit(vc.Hash) {
 			continue
 		}
 
@@ -261,7 +273,7 @@ func (dfs *FilteredDFS) AppendCommits(
 			}
 			np, err := dfs.ToDFS.GetCommit(newparent)
 			if err != nil {
-				return fmt.Errorf("failed to obtain parent commit %s due to: %w", newparent, err)
+				return nil, fmt.Errorf("failed to obtain parent commit %s due to: %w", newparent, err)
 			}
 			parents = append(parents, np)
 			parentsSeen[newparent] = empty{}
@@ -269,7 +281,7 @@ func (dfs *FilteredDFS) AppendCommits(
 
 		newcommit, isparent, err := FilterCommit(ctx, c, parents, s, filter)
 		if err != nil {
-			return errorf(err, "failed to generate commit at %d for commit %s: %w ", i, c.Hash, err)
+			return nil, errorf(err, "failed to generate commit at %d for commit %s: %w ", i, c.Hash, err)
 		}
 		commitinfo := "empty"
 		if newcommit != nil {
@@ -283,15 +295,17 @@ func (dfs *FilteredDFS) AppendCommits(
 		if newcommit == nil {
 			dfs.FromToTo[c.Hash] = plumbing.ZeroHash
 		} else {
+			dfs.ToToFrom[newcommit.Hash] = c.Hash
 			dfs.FromToTo[c.Hash] = newcommit.Hash
 		}
+
 		if newcommit != nil && !isparent {
 			dfs.ToDFS.AddCommit(newcommit)
-			dfs.ToToFrom[newcommit.Hash] = c.Hash
+			result = append(result, newcommit)
 		}
 	}
 
-	return nil
+	return result, nil
 }
 
 // SetFromStorage
@@ -324,13 +338,15 @@ func (dfs *FilteredDFS) ExpandFilteredCommits(ctx context.Context, commits []*ob
 		if c == nil {
 			continue
 		}
-		if _, found := dfs.ToToFrom[c.Hash]; found {
+		// this commit is already mapped
+		if dfs.ToDFS.HasCommit(c.Hash) {
 			continue
 		}
 
 		if c.NumParents() == 0 {
 			return nil, fmt.Errorf("commit %s has no parents", c.Hash.String())
 		}
+		dfs.ToDFS.AddCommit(c)
 		parents := make([]*object.Commit, 0, len(c.ParentHashes))
 		firstparent, err := c.Parent(0)
 		if err != nil {
@@ -349,7 +365,7 @@ func (dfs *FilteredDFS) ExpandFilteredCommits(ctx context.Context, commits []*ob
 			parents = append(parents, fromparent)
 		}
 
-		newcommit, err := ExpandCommitMultiParents(ctx, dfs.toStorage, firstparent, c, parents, dfs.toStorage, dfs.filter)
+		newcommit, err := ExpandCommitMultiParents(ctx, dfs.toStorage, firstparent, c, parents, dfs.fromStorage, dfs.filter)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand commit %s: %w", c.Hash.String(), err)
 		}
@@ -358,7 +374,166 @@ func (dfs *FilteredDFS) ExpandFilteredCommits(ctx context.Context, commits []*ob
 		dfs.FromDFS.AddCommit(newcommit)
 		dfs.ToToFrom[c.Hash] = newcommit.Hash
 		dfs.FromToTo[newcommit.Hash] = c.Hash
+
+		result = append(result, newcommit)
 	}
 
 	return result, nil
+}
+
+func (dfs *FilteredDFS) CheckCommitsAgainstFilter(ctx context.Context, commits []*object.Commit) ([]*FilePatchCheckResult, error) {
+	result := make([]*FilePatchCheckResult, 0, len(commits))
+
+	for _, c := range commits {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		if c == nil {
+			continue
+		}
+		// this commit is already mapped
+		if dfs.ToDFS.HasCommit(c.Hash) {
+			continue
+		}
+
+		if c.NumParents() == 0 {
+			return nil, fmt.Errorf("commit %s has no parents", c.Hash.String())
+		}
+
+		firstparent, err := c.Parent(0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain parent for commit %s: %w", c.Hash.String(), err)
+		}
+
+		origtree, err := firstparent.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain tree for parent commit %s: %w", firstparent.Hash.String(), err)
+		}
+		newtree, err := c.Tree()
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain tree for commit %s: %w", firstparent.Hash.String(), err)
+		}
+
+		patch, err := origtree.Patch(newtree)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate file patch: %w", err)
+		}
+
+		result = append(result, CheckFilePatchAgainstFilter(patch.FilePatches(), dfs.filter))
+	}
+
+	return result, nil
+}
+
+func NewFilteredDFSWithStat(
+	fromDfs []string,
+	toDfs []string,
+	fromToTo map[string]string,
+	toToFrom map[string]string,
+	fromStorage storer.Storer,
+	toStorage storer.Storer,
+	filter Filter,
+) (*FilteredDFS, error) {
+	result := NewEmptyFilteredDFS(fromStorage, toStorage, filter)
+
+	for _, fromc := range fromDfs {
+		h, err := DecodeHashHex(fromc)
+		if err != nil {
+			return nil, err
+		}
+
+		result.FromDFS.AddHash(h)
+	}
+	for _, toc := range toDfs {
+		h, err := DecodeHashHex(toc)
+		if err != nil {
+			return nil, err
+		}
+
+		result.ToDFS.AddHash(h)
+	}
+
+	for k, v := range fromToTo {
+		hfrom, err := DecodeHashHex(k)
+		if err != nil {
+			return nil, err
+		}
+		hto, err := DecodeHashHex(v)
+		if err != nil {
+			return nil, err
+		}
+
+		result.FromToTo[hfrom] = hto
+	}
+
+	for k, v := range toToFrom {
+		hfrom, err := DecodeHashHex(v)
+		if err != nil {
+			return nil, err
+		}
+		hto, err := DecodeHashHex(k)
+		if err != nil {
+			return nil, err
+		}
+
+		result.ToToFrom[hto] = hfrom
+	}
+
+	return result, nil
+}
+
+func (dfs *FilteredDFS) DumpStat() (fromDfs []string, toDfs []string, fromToTo map[string]string, toToFrom map[string]string) {
+	fromDfs = make([]string, 0, len(dfs.FromDFS.Path))
+	for _, c := range dfs.FromDFS.Path {
+		fromDfs = append(fromDfs, c.Hash.String())
+	}
+	fromToTo = make(map[string]string)
+	for k, v := range dfs.FromToTo {
+		fromToTo[k.String()] = v.String()
+	}
+
+	toDfs = make([]string, 0, len(dfs.ToDFS.Path))
+	for _, c := range dfs.ToDFS.Path {
+		toDfs = append(toDfs, c.Hash.String())
+	}
+
+	toToFrom = make(map[string]string)
+	for k, v := range dfs.ToToFrom {
+		toToFrom[k.String()] = v.String()
+	}
+
+	return
+}
+
+var (
+	ErrMissingHeadForFrom = errors.New("missing head for from")
+	ErrMissingHeadForTo   = errors.New("missing head for to")
+)
+
+func (dfs *FilteredDFS) LastCommits() (fromhead *object.Commit, tohead *object.Commit, err error) {
+	if len(dfs.FromDFS.Path) > 0 {
+		fromhead, err = dfs.FromDFS.Path[len(dfs.FromDFS.Path)-1].GetCommit()
+		if err != nil {
+			err = fmt.Errorf("failed to get from commit: %w", err)
+			return
+		}
+	} else {
+		err = ErrMissingHeadForFrom
+		return
+	}
+	if len(dfs.ToDFS.Path) > 0 {
+		tohead, err = dfs.ToDFS.Path[len(dfs.ToDFS.Path)-1].GetCommit()
+		if err != nil {
+			err = fmt.Errorf("failed to get to commit: %w", err)
+			return
+		}
+	} else {
+		err = ErrMissingHeadForTo
+		return
+	}
+
+	return
 }

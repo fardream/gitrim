@@ -6,6 +6,7 @@ import (
 	"github.com/fardream/gitrim"
 )
 
+// NewCanonicalFilter creates a new [Filter] from raw string text
 func NewCanonicalFilter(rawtext string) (*Filter, error) {
 	lines, err := gitrim.LoadPatternStringFromString(rawtext, true)
 	if err != nil {

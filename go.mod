@@ -4,7 +4,7 @@ go 1.21.0
 
 require (
 	github.com/go-git/go-billy/v5 v5.5.0
-	github.com/go-git/go-git/v5 v5.9.0
+	github.com/go-git/go-git/v5 v5.10.0
 	github.com/goccy/go-yaml v1.11.2
 	github.com/google/go-cmp v0.6.0
 	github.com/spf13/cobra v1.7.1-0.20230908172906-0c72800b8dba

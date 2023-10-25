@@ -31,7 +31,11 @@ message Filter {
 // RepoSync contains the information about sync-ing commits from a repo into a
 // repo after files/trees are filtered by the provided filter.
 //
-// Each RepoSync contains an id, which is a hash of the two repos/branch.
+// Each RepoSync contains an id, which is sha256
+// hash of the following string
+//
+//   (from remote name)-(from owner name)-(from repo name)-(from branch)-(to
+//   remote name)-(to owner name)-(to repo name)-(to branch)
 message RepoSync {
   // Id of the repo sync
   string id = 1;
@@ -57,18 +61,53 @@ message RepoSync {
   // generated/filtered commits to zero parents - so they will become root
   // commits in the filtered repo.
   repeated string root_commits = 41;
-
-  // head commit when the repo sync was first created. This, together with the
-  // root_commits, are useful when filters of the commits changed.
-  string init_head_commit = 42;
-
-  string last_sync_from_commit = 43;
-  string last_sync_to_commit = 44;
 }
 
-message PullRequestInfo {
-  GitRepoIdentifier repo = 1;
-  string identifier = 2;
+// SyncStat contains the information about the sync-ing between two repos.
+message SyncStat {
+  string last_sync_from_commit = 1;
+  repeated string from_dfs = 2;
+
+  string last_sync_to_commit = 11;
+  repeated string to_dfs = 12;
+
+  map<string, string> from_to_to = 21;
+  map<string, string> to_to_from = 22;
+}
+
+// LastSyncCommitStatus indicates the status the last sync commit compared with
+// the repo on remote.
+message LastSyncCommitStatus {
+  enum Enum {
+    // Unknown
+    UNKNOWN = 0;
+    // repo is empty or the branch doesn't exist
+    EMPTY = 1;
+    // repo on remote has more commits.
+    ADVANCED = 2;
+    // repo is in sync
+    INSYNC = 3;
+    // repo from remote has a different commit than RepoSync sees, but
+    // the last sync-ed commit is not in the history of the remote.
+    DIVERGED = 4;
+  }
+}
+
+message SubRepoCommitsCheck {
+  enum Status {
+    UNKNOWN = 0;
+    // the sub repo has commits and the from repo is in sync, the
+    // commits also pass filter check
+    CHECK_PASSED = 1;
+    // from repo is not in sync with remote
+    FROM_NOT_IN_SYNC = 2;
+    // to repo diverges from the last sync commit
+    TO_DIVERGED = 3;
+    // to has no new commits, but in sync
+    TO_NO_NEW_COMMITS = 4;
+    // to has new commits, but those commits are rejected by filter.
+    COMMITS_REJECTED = 5;
+  }
 }
 
 // GiTrim
@@ -85,31 +124,39 @@ service GiTrim {
   rpc InitRepoSync(InitRepoSyncRequest) returns (InitRepoSyncResponse) {}
 
   // SyncToSubRepo syncs from the original repo to the sub repo.
-  //
+  // The request can be set to force.
   rpc SyncToSubRepo(SyncToSubRepoRequest) returns (SyncToSubRepoResponse) {}
 
-  // CommitFromSubRepo tries to sends a commit from a sub repo to the original
-  // repo.
+  // CommitsFromSubRepo tries to sends a series of commits from a sub repo to
+  // the original repo.
   //
-  // The commit will be rejected if:
-  //   - the parent of commit is now head that is sync-ed from original repo.
-  //   - the modification contained in the repo is rejected by the filter.
-  //   - the commit contains gpg signatures.
-  //
-  // Note request cannot contain multiple commits.
-  rpc CommitFromSubRepo(CommitFromSubRepoRequest)
-      returns (CommitFromSubRepoResponse) {}
+  // The commits will be rejected if:
+  //   - the commits don't form a linear history.
+  //   - the current head of from repo, once filtered, is not the immediate
+  //     parent of those commits.
+  //   - the modification contained is rejected by the filter.
+  //   - the commits contains gpg signatures (can be turned off).
+  rpc CommitsFromSubRepo(CommitsFromSubRepoRequest)
+      returns (CommitsFromSubRepoResponse) {}
 
-  // CheckCommitFromSubRepo checks if the commit will be accepted into the
+  // CheckRepoSyncUpToDate checks if the head of current from repo, once
+  // fitlered, is contained in the history of branch.
+  rpc CheckRepoSyncUpToDate(CheckRepoSyncUpToDateRequest)
+      returns (CheckRepoSyncUpToDateResponse) {}
+
+  // CheckCommitsFromSubRepo checks if the commits will be accepted into the
   // original repo.
   //
-  // The commit will be rejected if:
-  //   - the parent of commit is now head that is sync-ed from original repo.
-  //   - the modification contained in the repo is rejected by the filter.
-  //   - the commit contains gpg signatures.
-  rpc CheckCommitFromSubRepo(CheckCommitFromSubRepoRequest)
-      returns (CheckCommitFromSubRepoResponse) {}
+  // The commits will be rejected if:
+  //   - the commits don't form a linear history.
+  //   - the current head of from repo, once filtered, is not the immediate
+  //     parent of those commits.
+  //   - the modification contained is rejected by the filter.
+  //   - the commits contains gpg signatures (can be turned off).
+  rpc CheckCommitsFromSubRepo(CheckCommitsFromSubRepoRequest)
+      returns (CheckCommitsFromSubRepoResponse) {}
 
+  // GetRepoSync obtain the sync relation by the id.
   rpc GetRepoSync(GetRepoSyncRequest) returns (GetRepoSyncResponse) {}
 }
 
@@ -122,18 +169,15 @@ message InitRepoSyncRequest {
 
   string filter = 31;
 
-  // commits in the unfiltered repo that will be considered the root commits of
-  // the new repo after filtering.
+  // commits in the unfiltered repo that will be considered the root commits
+  // of the new repo after filtering.
   //
   // Root commits are just commits without parent commits.
-  // The filter process walk the commit graph from the head of the from_branch,
-  // and if it sees those commits listed here, it will stop the walk and set the
-  // generated/filtered commits to zero parents - so they will become root
-  // commits in the filtered repo.
+  // The filter process walk the commit graph from the head of the
+  // from_branch, and if it sees those commits listed here, it will stop the
+  // walk and set the generated/filtered commits to zero parents - so they
+  // will become root commits in the filtered repo.
   repeated string root_commits = 41;
-
-  // max depth from the head
-  int64 max_depth = 42;
 }
 
 message InitRepoSyncResponse {
@@ -144,15 +188,71 @@ message InitRepoSyncResponse {
 message SyncToSubRepoRequest {
   string id = 1;
   bool force = 3;
+  string override_from_branch = 4;
+  string override_to_branch = 5;
 }
 
-message SyncToSubRepoResponse {}
+message SyncToSubRepoResponse {
+  int32 number_of_new_commits = 1;
+  string original_head = 2;
+  string new_head = 3;
+}
 
-message CommitFromSubRepoRequest {}
-message CommitFromSubRepoResponse {}
+message CommitsFromSubRepoRequest {
+  string id = 1;
+  string override_from_branch = 2;
+  string override_to_branch = 3;
 
-message CheckCommitFromSubRepoRequest {}
-message CheckCommitFromSubRepoResponse {}
+  // allow pgp signature removes PGP signature from the commits.
+  // Note this way, the commits pushed to from repo will be sync-ed back
+  // as a different commit instead of the original one.
+  bool allow_pgp_signature = 4;
+
+  bool do_push = 31;
+}
+
+message CommitsFromSubRepoResponse {
+  SubRepoCommitsCheck.Status result = 1;
+  LastSyncCommitStatus.Enum from_repo_status = 2;
+  LastSyncCommitStatus.Enum to_repo_status = 3;
+
+  // commits contain gpg signatures
+  bool has_gpg_signatures = 11;
+  // files rejected by the filter
+  repeated string rejected_files = 12;
+
+  repeated string new_commits = 21;
+}
+
+message CheckRepoSyncUpToDateRequest {
+  string id = 1;
+}
+message CheckRepoSyncUpToDateResponse {
+  LastSyncCommitStatus.Enum from_repo_status = 1;
+  LastSyncCommitStatus.Enum to_repo_status = 2;
+}
+
+message CheckCommitsFromSubRepoRequest {
+  string id = 1;
+  string override_from_branch = 2;
+  string override_to_branch = 3;
+
+  // allow pgp signature removes PGP signature from the commits.
+  // Note this way, the commits pushed to from repo will be sync-ed back
+  // as a different commit instead of the original one.
+  bool allow_pgp_signature = 4;
+}
+
+message CheckCommitsFromSubRepoResponse {
+  SubRepoCommitsCheck.Status result = 1;
+  LastSyncCommitStatus.Enum from_repo_status = 2;
+  LastSyncCommitStatus.Enum to_repo_status = 3;
+
+  // commits contain gpg signatures
+  bool has_gpg_signatures = 11;
+  // files rejected by the filter
+  repeated string rejected_files = 12;
+}
 
 message GetRepoSyncRequest {
   string id = 1;
@@ -161,4 +261,5 @@ message GetRepoSyncRequest {
 message GetRepoSyncResponse {
   RepoSync repo_sync = 1;
   string secret = 2;
+  SyncStat sync_stat = 3;
 }

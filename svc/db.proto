@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package gitrim.svc;
+
+option go_package = "github.com/fardream/gitrim/svc";
+
+import "svc.proto";
+
+message DbRepoSync {
+  RepoSync sync_data = 1;
+  SyncStat stat = 2;
+}

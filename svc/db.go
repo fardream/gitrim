@@ -1,11 +1,14 @@
 package svc
 
 import (
+	"errors"
 	"os"
 
 	"go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 )
+
+var ErrNilDB = errors.New("nil db")
 
 // getFromDb returns the typed
 func getFromDb[
@@ -114,19 +117,6 @@ const (
 	ID_TO_SECRET_BUCKET = "id-to-secrets"
 )
 
-func getRepoSyncFromDb(
-	db *bbolt.DB,
-	id []byte,
-) (*RepoSync, error) {
-	return getFromDb(
-		db,
-		[]byte(REPO_SYNC_BUCKET),
-		id,
-		func(d []byte, v *RepoSync) error {
-			return proto.Unmarshal(d, v)
-		})
-}
-
 func putSecretFunc(id []byte, secret []byte) func(tx *bbolt.Tx) error {
 	return func(tx *bbolt.Tx) error {
 		idtosecretbucket, err := tx.CreateBucketIfNotExists([]byte(ID_TO_SECRET_BUCKET))
@@ -144,7 +134,7 @@ func putSecretFunc(id []byte, secret []byte) func(tx *bbolt.Tx) error {
 	}
 }
 
-func putRepoSyncFunc(id []byte, reposync *RepoSync) func(tx *bbolt.Tx) error {
+func putRepoSyncFunc(id []byte, reposync *DbRepoSync) func(tx *bbolt.Tx) error {
 	return func(tx *bbolt.Tx) error {
 		reposyncbucket, err := tx.CreateBucketIfNotExists([]byte(REPO_SYNC_BUCKET))
 		if err != nil {
@@ -159,6 +149,8 @@ func putRepoSyncFunc(id []byte, reposync *RepoSync) func(tx *bbolt.Tx) error {
 		return reposyncbucket.Put(id, b)
 	}
 }
+
+var ErrSecretNotFoundForId = errors.New("secret not found for id")
 
 func getSecretForId(db *bbolt.DB, id []byte) ([]byte, error) {
 	var s []byte

@@ -1,5 +1,15 @@
 package svc
 
+import "errors"
+
+var (
+	ErrNilRepo         = errors.New("nil repo")
+	ErrEmptyParentName = errors.New("empty owner name")
+	ErrEmptyRepoName   = errors.New("empty repo name")
+	ErrEmptyBranchName = errors.New("empty branch name")
+	ErrEmptyRemoteName = errors.New("empty remote name")
+)
+
 func verifyGitRepoIdentifier(repo *GitRepoIdentifier) error {
 	if repo == nil {
 		return ErrNilRepo

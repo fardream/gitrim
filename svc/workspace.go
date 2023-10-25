@@ -8,19 +8,30 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
+
+	"github.com/fardream/gitrim"
 )
 
-// workspace contains the repo, the branch, and the memory storage for this repo.
+// workspace contains the repo, the branch, and the memory storage for one repo.
 type workspace struct {
+	// storage
 	storage *memory.Storage
-	repoId  *GitRepoIdentifier
-	branch  string
-	repo    *git.Repository
+	// repo id
+	repoId *GitRepoIdentifier
+	// branch
+	branch string
+	// repo
+	repo *git.Repository
+	// is empty indicates if the repo or branch is empty
 	isempty bool
-	auth    *http.BasicAuth
+
+	branchhead *object.Commit
+
+	auth *http.BasicAuth
 }
 
 func (c *RemoteConfig) auth() *http.BasicAuth {
@@ -39,9 +50,12 @@ func constructPullUrl(cfg *RemoteConfig, owner string, repo string) (string, err
 }
 
 const (
-	refSpecSingleBranch = "+refs/heads/%s:refs/remotes/%s/%[1]s"
-	remotename          = "origin"
+	refSpecSingleBranchRemote = "+refs/heads/%s:refs/remotes/%s/%[1]s"
+	refSpecSingleBranchPush   = "+refs/heads/%s:refs/heads/%[1]s"
+	remotename                = "origin"
 )
+
+var ErrEmptyRemoteConfig = errors.New("empty remote config")
 
 // newWorkspace creates a new workspace.
 //
@@ -52,16 +66,17 @@ const (
 // fetch may fail if the remote is empty.
 // If the repo is not empty, a local branch will be set up with branch name
 // with the remote if the remote branch exists.
-func (s *Svc) newWorkspace(
+func newWorkspace(
 	ctx context.Context,
+	configmap map[string]*RemoteConfig,
 	id *GitRepoIdentifier,
 	branch string,
 ) (*workspace, error) {
 	// check the config
-	if s.config.Remotes == nil {
+	if configmap == nil {
 		return nil, ErrEmptyRemoteConfig
 	}
-	remoteConfig, found := s.config.Remotes[id.RemoteName]
+	remoteConfig, found := configmap[id.RemoteName]
 	if !found {
 		return nil, fmt.Errorf("unknown remote: %s", id.RemoteName)
 	}
@@ -95,7 +110,7 @@ func (s *Svc) newWorkspace(
 			URLs: []string{url},
 			Fetch: []config.RefSpec{
 				config.RefSpec(
-					fmt.Sprintf(refSpecSingleBranch, branch, remotename),
+					fmt.Sprintf(refSpecSingleBranchRemote, branch, remotename),
 				),
 			},
 			Mirror: true,
@@ -115,52 +130,86 @@ func (s *Svc) newWorkspace(
 	if err := w.fetch(ctx); err != nil {
 		return nil, err
 	}
+
 	return w, nil
 }
 
+// sethead set the head of the branch
+func (w *workspace) sethead() bool {
+	setemptyandreturnfalse := func() bool {
+		w.isempty = true
+		return false
+	}
+	if w.isempty {
+		return setemptyandreturnfalse()
+	}
+
+	remotebranch := plumbing.NewRemoteReferenceName(remotename, w.branch)
+	r, err := w.storage.Reference(remotebranch)
+	if err != nil || r.Hash().IsZero() {
+		return setemptyandreturnfalse()
+	}
+	err = w.storage.SetReference(
+		plumbing.NewHashReference(
+			plumbing.NewBranchReferenceName(w.branch),
+			r.Hash()))
+
+	if err != nil {
+		logger.Warn("cannot set local branch", "branch", w.branch)
+		return setemptyandreturnfalse()
+	}
+
+	head, err := object.GetCommit(w.storage, r.Hash())
+	if err != nil {
+		logger.Warn("failed to get the head commit", "branch", w.branch, "commit", r.Hash().String())
+		return setemptyandreturnfalse()
+	}
+
+	w.branchhead = head
+
+	return true
+}
+
+func isNoMatchingRef(err error) bool {
+	var v git.NoMatchingRefSpecError
+	return errors.As(err, &v)
+}
+
+// fetch the branch from remote and set the branch to
 func (w *workspace) fetch(ctx context.Context) error {
-	err := w.repo.FetchContext(ctx, &git.FetchOptions{
-		Auth:       w.auth,
-		RemoteName: remotename,
-	})
+	err := w.repo.FetchContext(ctx,
+		&git.FetchOptions{
+			Auth:       w.auth,
+			RemoteName: remotename,
+		})
 
 	// check if the remote is empty.
 	if err != nil && errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		logger.Warn("empty remote")
+		w.isempty = true
+	} else if err != nil && isNoMatchingRef(err) {
+		logger.Warn("branch doesn't exist")
 		w.isempty = true
 	} else if err != nil {
 		return fmt.Errorf("failed to clone: %w", err)
 	}
 
 	// if the repo is not empty, try set the branch, since no local branch yet.
-	if !w.isempty {
-		remotebranch := plumbing.NewRemoteReferenceName(remotename, w.branch)
-		r, err := w.storage.Reference(remotebranch)
-		if err == nil && !r.Hash().IsZero() {
-			if err := w.storage.SetReference(
-				plumbing.NewHashReference(
-					plumbing.NewBranchReferenceName(w.branch),
-					r.Hash())); err != nil {
-				logger.Warn("cannot set local branch", "branch", w.branch)
-			}
-		}
-	}
+	w.sethead()
 
 	return nil
 }
 
-// updateToLatest push the changes to the remote
-func (w *workspace) updateToLatest(ctx context.Context, forcePush bool) error {
-	var forcewithlease *git.ForceWithLease
-	if forcePush {
-		forcewithlease = &git.ForceWithLease{}
-	}
+// pushToRemote push the changes to the remote
+func (w *workspace) pushToRemote(ctx context.Context, forcePush bool) error {
+	refspec := config.RefSpec(fmt.Sprintf(refSpecSingleBranchPush, w.branch))
 	err := w.repo.PushContext(
 		ctx,
 		&git.PushOptions{
-			Auth:           w.auth,
-			Force:          forcePush,
-			ForceWithLease: forcewithlease,
+			RemoteName: remotename,
+			Auth:       w.auth,
+			Force:      forcePush,
+			RefSpecs:   []config.RefSpec{refspec},
 		})
 	isuptodate := errors.Is(err, git.NoErrAlreadyUpToDate)
 	switch {
@@ -172,4 +221,62 @@ func (w *workspace) updateToLatest(ctx context.Context, forcePush bool) error {
 	default:
 		return nil
 	}
+}
+
+func (wksp *workspace) updateBranchHead(toc *object.Commit) error {
+	h := toc.Hash
+	refname := plumbing.NewBranchReferenceName(wksp.branch)
+	ref := plumbing.NewHashReference(refname, h)
+	wksp.branchhead = toc
+	if err := wksp.storage.SetReference(ref); err != nil {
+		return fmt.Errorf("failed to set to branch in to repo: %w", err)
+	}
+	bheadref := plumbing.NewSymbolicReference(plumbing.HEAD, refname)
+	if err := wksp.storage.SetReference(bheadref); err != nil {
+		return fmt.Errorf("failed to set HEAD due to: %w", err)
+	}
+	return nil
+}
+
+func (wksp *workspace) getBranchHead() (*object.Commit, error) {
+	if wksp.branchhead != nil {
+		return wksp.branchhead, nil
+	}
+	branchref, err := wksp.storage.Reference(plumbing.NewBranchReferenceName(wksp.branch))
+	if err != nil && errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return nil, err
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to obtain branch %s head: %w", wksp.branch, err)
+	}
+	return object.GetCommit(wksp.storage, branchref.Hash())
+}
+
+func (wksp *workspace) getNewCommits(
+	ctx context.Context,
+	lastcommit plumbing.Hash,
+	pastcommits gitrim.HashSet,
+	islinear bool,
+) ([]*object.Commit, error) {
+	if wksp.isempty {
+		return nil, nil
+	}
+
+	headcommit, err := wksp.getBranchHead()
+	if err != nil {
+		return nil, err
+	}
+
+	var hist []*object.Commit
+
+	if islinear {
+		hist, err = gitrim.GetLinearHistory(ctx, headcommit, lastcommit, 0)
+	} else {
+		hist, err = gitrim.GetDFSPath(ctx, headcommit, pastcommits, 0)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return hist, nil
 }

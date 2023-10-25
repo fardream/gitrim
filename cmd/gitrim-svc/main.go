@@ -23,8 +23,9 @@ type rootCmd struct {
 	configPath string
 
 	initRepoSyncCmd *initRepoSyncCmd
-	syncToSubCmd    *syncToSubCmd
 	lsRepoSyncCmd   *lsRepoSyncCmd
+	syncToSubCmd    *syncToSubCmd
+	syncToFromCmd   *syncToFromCmd
 
 	webhookCmd *cobra.Command
 }
@@ -56,11 +57,14 @@ func newRootCmd() *rootCmd {
 	c.syncToSubCmd = newSyncToSubCmd(func(*cobra.Command, []string) {
 		c.runSyncToSub()
 	})
-	c.lsRepoSyncCmd = newLsRepoSyncCmd(func(cmd *cobra.Command, args []string) {
+	c.syncToFromCmd = newSyncToFromCmd(func(*cobra.Command, []string) {
+		c.runSyncToFrom()
+	})
+	c.lsRepoSyncCmd = newLsRepoSyncCmd(func(*cobra.Command, []string) {
 		c.runLs()
 	})
 
-	c.AddCommand(c.initRepoSyncCmd.Command, c.syncToSubCmd.Command, c.lsRepoSyncCmd.Command)
+	c.AddCommand(c.initRepoSyncCmd.Command, c.syncToSubCmd.Command, c.lsRepoSyncCmd.Command, c.syncToFromCmd.Command)
 
 	return c
 }
@@ -71,16 +75,15 @@ func (c *rootCmd) runInitRepoSync() {
 
 	config := cmd.GetOrPanic(svc.ParseConfigYAML(cmd.GetOrPanic(os.ReadFile(c.configPath))))
 
-	svc := cmd.GetOrPanic(svc.New(config))
-	defer svc.Close()
+	s := cmd.GetOrPanic(svc.New(config))
+	defer s.Close()
 
 	filter := cmd.GetOrPanic(os.ReadFile(c.initRepoSyncCmd.filterFile))
 
 	c.initRepoSyncCmd.request.Filter = string(filter)
 
-	resp := cmd.GetOrPanic(svc.InitRepoSync(ctx, c.initRepoSyncCmd.request))
-
-	fmt.Println(resp.String())
+	resp := cmd.GetOrPanic(s.InitRepoSync(ctx, c.initRepoSyncCmd.request))
+	fmt.Println(PrintProtoText(resp))
 }
 
 func (c *rootCmd) runWebhook() {
@@ -103,12 +106,15 @@ func (c *rootCmd) runSyncToSub() {
 	s := cmd.GetOrPanic(svc.New(config))
 	defer s.Close()
 
-	resp := cmd.GetOrPanic(s.SyncToSubRepo(ctx, &svc.SyncToSubRepoRequest{
-		Id:    c.syncToSubCmd.id,
-		Force: c.syncToSubCmd.force,
-	}))
+	resp := cmd.GetOrPanic(s.SyncToSubRepo(ctx,
+		&svc.SyncToSubRepoRequest{
+			Id:                 c.syncToSubCmd.id,
+			Force:              c.syncToSubCmd.force,
+			OverrideFromBranch: c.syncToSubCmd.overrideFromBranch,
+			OverrideToBranch:   c.syncToSubCmd.overrideToBranch,
+		}))
 
-	fmt.Println(resp.String())
+	fmt.Println(PrintProtoText(resp))
 }
 
 func (c *rootCmd) runLs() {
@@ -120,12 +126,72 @@ func (c *rootCmd) runLs() {
 	s := cmd.GetOrPanic(svc.New(config))
 	defer s.Close()
 
+printloop:
 	for _, id := range c.lsRepoSyncCmd.id {
 		resp, err := s.GetRepoSync(ctx, &svc.GetRepoSyncRequest{Id: id})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to list id: %s\nerror:\n%s\n", id, err.Error())
-		} else {
-			fmt.Println(resp.RepoSync.String())
+			continue printloop
 		}
+		fmt.Println((PrintProtoText(resp.RepoSync)))
+		if c.lsRepoSyncCmd.showmap {
+			fmt.Println((PrintProtoText(resp.SyncStat)))
+		} else {
+			resp.SyncStat.FromDfs = nil
+			clear(resp.SyncStat.FromToTo)
+			resp.SyncStat.ToDfs = nil
+			clear(resp.SyncStat.ToToFrom)
+			fmt.Println((PrintProtoText(resp.SyncStat)))
+		}
+		if !c.lsRepoSyncCmd.checkstat {
+			continue printloop
+		}
+		stat, err := s.CheckCommitsFromSubRepo(ctx,
+			&svc.CheckCommitsFromSubRepoRequest{
+				Id:                 id,
+				OverrideFromBranch: c.lsRepoSyncCmd.overrideFromBranch,
+				OverrideToBranch:   c.lsRepoSyncCmd.overrideToBranch,
+			})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to get stat:\n%s\n", err.Error())
+			continue printloop
+		}
+		fmt.Println(PrintProtoText(stat))
+	}
+}
+
+func (c *rootCmd) runSyncToFrom() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	config := cmd.GetOrPanic(svc.ParseConfigYAML(cmd.GetOrPanic(os.ReadFile(c.configPath))))
+
+	s := cmd.GetOrPanic(svc.New(config))
+	defer s.Close()
+
+	if c.syncToFromCmd.noDryrun {
+		resp := cmd.GetOrPanic(
+			s.CommitsFromSubRepo(
+				ctx,
+				&svc.CommitsFromSubRepoRequest{
+					Id:                 c.syncToFromCmd.id,
+					OverrideFromBranch: c.syncToFromCmd.overrideFromBranch,
+					OverrideToBranch:   c.syncToFromCmd.overrideToBranch,
+					AllowPgpSignature:  c.syncToFromCmd.allowGpg,
+					DoPush:             true,
+				}))
+		fmt.Println(PrintProtoText(resp))
+	} else {
+		resp := cmd.GetOrPanic(
+			s.CheckCommitsFromSubRepo(
+				ctx,
+				&svc.CheckCommitsFromSubRepoRequest{
+					Id:                 c.syncToFromCmd.id,
+					OverrideFromBranch: c.syncToFromCmd.overrideFromBranch,
+					OverrideToBranch:   c.syncToFromCmd.overrideToBranch,
+					AllowPgpSignature:  c.syncToFromCmd.allowGpg,
+				}))
+
+		fmt.Println(PrintProtoText(resp))
 	}
 }

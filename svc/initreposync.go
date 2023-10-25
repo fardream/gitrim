@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"go.etcd.io/bbolt"
@@ -11,27 +12,38 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func newRepoSyncId(fromRepo *GitRepoIdentifier, fromBranch string, toRepo *GitRepoIdentifier, toBranch string) (string, error) {
-	return fmt.Sprintf(
-		"%s-%s-%s-%s-%s-%s-%s-%s",
-		fromRepo.RemoteName, fromRepo.Owner, fromRepo.Repo,
-		fromBranch,
-		toRepo.RemoteName, toRepo.Owner, toRepo.Repo,
-		toBranch), nil
+// NewRepoSyncId creates a new id for the repo sync.
+func NewRepoSyncId(
+	fromRepo *GitRepoIdentifier,
+	fromBranch string,
+	toRepo *GitRepoIdentifier,
+	toBranch string,
+) []byte {
+	r := sha256.Sum256(
+		([]byte)(fmt.Sprintf(
+			"%s-%s-%s-%s-%s-%s-%s-%s",
+			fromRepo.RemoteName, fromRepo.Owner, fromRepo.Repo,
+			fromBranch,
+			toRepo.RemoteName, toRepo.Owner, toRepo.Repo,
+			toBranch)))
+	return r[:]
 }
 
-func (s *Svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*InitRepoSyncResponse, error) {
+var ErrEmptyFilter = errors.New("empty filter")
+
+func (s *Svc) InitRepoSync(
+	ctx context.Context,
+	req *InitRepoSyncRequest,
+) (*InitRepoSyncResponse, error) {
+	// check if the repo sync request is valid
 	err := s.verifyInitRepoSyncRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	idraw, err := newRepoSyncId(req.FromRepo, req.FromBranch, req.ToRepo, req.ToBranch)
-	if err != nil {
-		return nil, err
-	}
-	id := sha256.Sum256([]byte(idraw))
+	// create id
+	id := NewRepoSyncId(req.FromRepo, req.FromBranch, req.ToRepo, req.ToBranch)
 
-	reposync, err := getRepoSyncFromDb(s.mustGetDb(), id[:])
+	reposync, err := getRepoSyncFromDb(s.mustGetDb(), id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if the database is already created: %w", err)
 	}
@@ -60,34 +72,25 @@ func (s *Svc) InitRepoSync(ctx context.Context, req *InitRepoSyncRequest) (*Init
 		return nil, ErrEmptyFilter
 	}
 
-	reposync = &RepoSync{
-		Id:         idstr,
-		FromRepo:   req.FromRepo,
-		FromBranch: req.FromBranch,
-		ToRepo:     req.ToRepo,
-		ToBranch:   req.ToBranch,
-		Filter:     filter,
+	reposync = &DbRepoSync{
+		SyncData: &RepoSync{
+			Id:         idstr,
+			FromRepo:   req.FromRepo,
+			FromBranch: req.FromBranch,
+			ToRepo:     req.ToRepo,
+			ToBranch:   req.ToBranch,
+			Filter:     filter,
+		},
+		Stat: EmptySyncStat(),
 	}
 
-	fromwksp, err := s.newWorkspace(ctx, req.FromRepo, req.FromBranch)
+	ws, err := newSyncWorkspace(ctx, s.config.Remotes, reposync)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to obtain from repo: %s", err.Error())
 	}
-	towskp, err := s.newWorkspace(ctx, req.ToRepo, req.ToBranch)
-	if err != nil {
-		return nil, err
-	}
 
-	info, err := syncWksp(ctx, fromwksp, req.FromBranch, towskp, req.ToBranch, reposync.Filter.CanonicalFilters, req.RootCommits, req.MaxDepth, true)
-	if err != nil {
+	if _, err := ws.syncToTo(ctx, true); err != nil {
 		return nil, err
-	}
-
-	if info != nil {
-		reposync.RootCommits = append(reposync.RootCommits, info.RootCommits...)
-		reposync.InitHeadCommit = info.InitHeadCommit
-		reposync.LastSyncFromCommit = info.LastSyncFromCommit
-		reposync.LastSyncToCommit = info.LastSyncToCommit
 	}
 
 	if err := s.db.Update(func(tx *bbolt.Tx) error {

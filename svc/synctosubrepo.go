@@ -9,51 +9,44 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var (
+	ErrStatusEmptyFromRepo = status.Error(codes.InvalidArgument, "empty from repo")
+	ErrStatusDBFailure     = status.Error(codes.Internal, "DB failure")
+)
+
 func (s *Svc) SyncToSubRepo(ctx context.Context, request *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error) {
-	logger.Info("sync", "id", request.Id)
-	idHex := request.Id
-	id, err := hex.DecodeString(idHex)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to parse id: %s", err.Error())
-	}
-
-	reposync, err := getRepoSyncFromDb(s.db, id)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to obtain repo sync from db: %s", err.Error())
-	}
-	if reposync == nil {
-		return nil, ErrStatusNotFound
-	}
-
-	fromwksp, err := s.newWorkspace(ctx, reposync.FromRepo, reposync.FromBranch)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to obtain from repo: %s", err.Error())
-	}
-	towksp, err := s.newWorkspace(ctx, reposync.ToRepo, reposync.ToBranch)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to obtain to repo: %s", err.Error())
-	}
-
-	info, err := syncWksp(ctx, fromwksp, reposync.FromBranch, towksp, reposync.ToBranch, reposync.Filter.CanonicalFilters, reposync.RootCommits, 0, request.Force)
+	ws, err := loadSyncWorkspaceFroReq(ctx, s.config.Remotes, s.db, request, true)
 	if err != nil {
 		return nil, err
 	}
-	if info == nil {
-		return nil, ErrStatusEmptyFromRepo
+
+	originalhead := ws.db.Stat.LastSyncToCommit
+	id, err := hex.DecodeString(request.Id)
+	if err != nil {
+		return nil, err
 	}
-
-	reposync.LastSyncFromCommit = info.LastSyncFromCommit
-	reposync.LastSyncToCommit = info.LastSyncToCommit
-
-	if err := s.db.Update(func(tx *bbolt.Tx) error {
-		return putRepoSyncFunc(id[:], reposync)(tx)
-	}); err != nil {
+	newcommits, err := ws.syncToTo(ctx, request.GetForce())
+	if err != nil {
 		return nil, err
 	}
 
-	if err := s.db.Sync(); err != nil {
-		return nil, ErrStatusDBFailure
+	if !HasOverrides(request) {
+		if err := s.db.Update(func(tx *bbolt.Tx) error {
+			return putRepoSyncFunc(id, ws.db)(tx)
+		}); err != nil {
+			return nil, err
+		}
+
+		if err := s.db.Sync(); err != nil {
+			return nil, ErrStatusDBFailure
+		}
+	} else {
+		logger.Info("not updating due to override", "id", request.Id)
 	}
 
-	return &SyncToSubRepoResponse{}, nil
+	return &SyncToSubRepoResponse{
+		NumberOfNewCommits: int32(len(newcommits)),
+		OriginalHead:       originalhead,
+		NewHead:            ws.db.Stat.LastSyncToCommit,
+	}, nil
 }

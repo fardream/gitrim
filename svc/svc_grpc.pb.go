@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	GiTrim_InitRepoSync_FullMethodName           = "/gitrim.svc.GiTrim/InitRepoSync"
-	GiTrim_SyncToSubRepo_FullMethodName          = "/gitrim.svc.GiTrim/SyncToSubRepo"
-	GiTrim_CommitFromSubRepo_FullMethodName      = "/gitrim.svc.GiTrim/CommitFromSubRepo"
-	GiTrim_CheckCommitFromSubRepo_FullMethodName = "/gitrim.svc.GiTrim/CheckCommitFromSubRepo"
-	GiTrim_GetRepoSync_FullMethodName            = "/gitrim.svc.GiTrim/GetRepoSync"
+	GiTrim_InitRepoSync_FullMethodName            = "/gitrim.svc.GiTrim/InitRepoSync"
+	GiTrim_SyncToSubRepo_FullMethodName           = "/gitrim.svc.GiTrim/SyncToSubRepo"
+	GiTrim_CommitsFromSubRepo_FullMethodName      = "/gitrim.svc.GiTrim/CommitsFromSubRepo"
+	GiTrim_CheckRepoSyncUpToDate_FullMethodName   = "/gitrim.svc.GiTrim/CheckRepoSyncUpToDate"
+	GiTrim_CheckCommitsFromSubRepo_FullMethodName = "/gitrim.svc.GiTrim/CheckCommitsFromSubRepo"
+	GiTrim_GetRepoSync_FullMethodName             = "/gitrim.svc.GiTrim/GetRepoSync"
 )
 
 // GiTrimClient is the client API for GiTrim service.
@@ -41,25 +42,32 @@ type GiTrimClient interface {
 	// generated from the id + 16 byte long salt.
 	InitRepoSync(ctx context.Context, in *InitRepoSyncRequest, opts ...grpc.CallOption) (*InitRepoSyncResponse, error)
 	// SyncToSubRepo syncs from the original repo to the sub repo.
+	// The request can be set to force.
 	SyncToSubRepo(ctx context.Context, in *SyncToSubRepoRequest, opts ...grpc.CallOption) (*SyncToSubRepoResponse, error)
-	// CommitFromSubRepo tries to sends a commit from a sub repo to the original
-	// repo.
+	// CommitsFromSubRepo tries to sends a series of commits from a sub repo to
+	// the original repo.
 	//
-	// The commit will be rejected if:
-	//   - the parent of commit is now head that is sync-ed from original repo.
-	//   - the modification contained in the repo is rejected by the filter.
-	//   - the commit contains gpg signatures.
-	//
-	// Note request cannot contain multiple commits.
-	CommitFromSubRepo(ctx context.Context, in *CommitFromSubRepoRequest, opts ...grpc.CallOption) (*CommitFromSubRepoResponse, error)
-	// CheckCommitFromSubRepo checks if the commit will be accepted into the
+	// The commits will be rejected if:
+	//   - the commits don't form a linear history.
+	//   - the current head of from repo, once filtered, is not the immediate
+	//     parent of those commits.
+	//   - the modification contained is rejected by the filter.
+	//   - the commits contains gpg signatures (can be turned off).
+	CommitsFromSubRepo(ctx context.Context, in *CommitsFromSubRepoRequest, opts ...grpc.CallOption) (*CommitsFromSubRepoResponse, error)
+	// CheckRepoSyncUpToDate checks if the head of current from repo, once
+	// fitlered, is contained in the history of branch.
+	CheckRepoSyncUpToDate(ctx context.Context, in *CheckRepoSyncUpToDateRequest, opts ...grpc.CallOption) (*CheckRepoSyncUpToDateResponse, error)
+	// CheckCommitsFromSubRepo checks if the commits will be accepted into the
 	// original repo.
 	//
-	// The commit will be rejected if:
-	//   - the parent of commit is now head that is sync-ed from original repo.
-	//   - the modification contained in the repo is rejected by the filter.
-	//   - the commit contains gpg signatures.
-	CheckCommitFromSubRepo(ctx context.Context, in *CheckCommitFromSubRepoRequest, opts ...grpc.CallOption) (*CheckCommitFromSubRepoResponse, error)
+	// The commits will be rejected if:
+	//   - the commits don't form a linear history.
+	//   - the current head of from repo, once filtered, is not the immediate
+	//     parent of those commits.
+	//   - the modification contained is rejected by the filter.
+	//   - the commits contains gpg signatures (can be turned off).
+	CheckCommitsFromSubRepo(ctx context.Context, in *CheckCommitsFromSubRepoRequest, opts ...grpc.CallOption) (*CheckCommitsFromSubRepoResponse, error)
+	// GetRepoSync obtain the sync relation by the id.
 	GetRepoSync(ctx context.Context, in *GetRepoSyncRequest, opts ...grpc.CallOption) (*GetRepoSyncResponse, error)
 }
 
@@ -89,18 +97,27 @@ func (c *giTrimClient) SyncToSubRepo(ctx context.Context, in *SyncToSubRepoReque
 	return out, nil
 }
 
-func (c *giTrimClient) CommitFromSubRepo(ctx context.Context, in *CommitFromSubRepoRequest, opts ...grpc.CallOption) (*CommitFromSubRepoResponse, error) {
-	out := new(CommitFromSubRepoResponse)
-	err := c.cc.Invoke(ctx, GiTrim_CommitFromSubRepo_FullMethodName, in, out, opts...)
+func (c *giTrimClient) CommitsFromSubRepo(ctx context.Context, in *CommitsFromSubRepoRequest, opts ...grpc.CallOption) (*CommitsFromSubRepoResponse, error) {
+	out := new(CommitsFromSubRepoResponse)
+	err := c.cc.Invoke(ctx, GiTrim_CommitsFromSubRepo_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *giTrimClient) CheckCommitFromSubRepo(ctx context.Context, in *CheckCommitFromSubRepoRequest, opts ...grpc.CallOption) (*CheckCommitFromSubRepoResponse, error) {
-	out := new(CheckCommitFromSubRepoResponse)
-	err := c.cc.Invoke(ctx, GiTrim_CheckCommitFromSubRepo_FullMethodName, in, out, opts...)
+func (c *giTrimClient) CheckRepoSyncUpToDate(ctx context.Context, in *CheckRepoSyncUpToDateRequest, opts ...grpc.CallOption) (*CheckRepoSyncUpToDateResponse, error) {
+	out := new(CheckRepoSyncUpToDateResponse)
+	err := c.cc.Invoke(ctx, GiTrim_CheckRepoSyncUpToDate_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *giTrimClient) CheckCommitsFromSubRepo(ctx context.Context, in *CheckCommitsFromSubRepoRequest, opts ...grpc.CallOption) (*CheckCommitsFromSubRepoResponse, error) {
+	out := new(CheckCommitsFromSubRepoResponse)
+	err := c.cc.Invoke(ctx, GiTrim_CheckCommitsFromSubRepo_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,25 +148,32 @@ type GiTrimServer interface {
 	// generated from the id + 16 byte long salt.
 	InitRepoSync(context.Context, *InitRepoSyncRequest) (*InitRepoSyncResponse, error)
 	// SyncToSubRepo syncs from the original repo to the sub repo.
+	// The request can be set to force.
 	SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error)
-	// CommitFromSubRepo tries to sends a commit from a sub repo to the original
-	// repo.
+	// CommitsFromSubRepo tries to sends a series of commits from a sub repo to
+	// the original repo.
 	//
-	// The commit will be rejected if:
-	//   - the parent of commit is now head that is sync-ed from original repo.
-	//   - the modification contained in the repo is rejected by the filter.
-	//   - the commit contains gpg signatures.
-	//
-	// Note request cannot contain multiple commits.
-	CommitFromSubRepo(context.Context, *CommitFromSubRepoRequest) (*CommitFromSubRepoResponse, error)
-	// CheckCommitFromSubRepo checks if the commit will be accepted into the
+	// The commits will be rejected if:
+	//   - the commits don't form a linear history.
+	//   - the current head of from repo, once filtered, is not the immediate
+	//     parent of those commits.
+	//   - the modification contained is rejected by the filter.
+	//   - the commits contains gpg signatures (can be turned off).
+	CommitsFromSubRepo(context.Context, *CommitsFromSubRepoRequest) (*CommitsFromSubRepoResponse, error)
+	// CheckRepoSyncUpToDate checks if the head of current from repo, once
+	// fitlered, is contained in the history of branch.
+	CheckRepoSyncUpToDate(context.Context, *CheckRepoSyncUpToDateRequest) (*CheckRepoSyncUpToDateResponse, error)
+	// CheckCommitsFromSubRepo checks if the commits will be accepted into the
 	// original repo.
 	//
-	// The commit will be rejected if:
-	//   - the parent of commit is now head that is sync-ed from original repo.
-	//   - the modification contained in the repo is rejected by the filter.
-	//   - the commit contains gpg signatures.
-	CheckCommitFromSubRepo(context.Context, *CheckCommitFromSubRepoRequest) (*CheckCommitFromSubRepoResponse, error)
+	// The commits will be rejected if:
+	//   - the commits don't form a linear history.
+	//   - the current head of from repo, once filtered, is not the immediate
+	//     parent of those commits.
+	//   - the modification contained is rejected by the filter.
+	//   - the commits contains gpg signatures (can be turned off).
+	CheckCommitsFromSubRepo(context.Context, *CheckCommitsFromSubRepoRequest) (*CheckCommitsFromSubRepoResponse, error)
+	// GetRepoSync obtain the sync relation by the id.
 	GetRepoSync(context.Context, *GetRepoSyncRequest) (*GetRepoSyncResponse, error)
 	mustEmbedUnimplementedGiTrimServer()
 }
@@ -164,11 +188,14 @@ func (UnimplementedGiTrimServer) InitRepoSync(context.Context, *InitRepoSyncRequ
 func (UnimplementedGiTrimServer) SyncToSubRepo(context.Context, *SyncToSubRepoRequest) (*SyncToSubRepoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SyncToSubRepo not implemented")
 }
-func (UnimplementedGiTrimServer) CommitFromSubRepo(context.Context, *CommitFromSubRepoRequest) (*CommitFromSubRepoResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CommitFromSubRepo not implemented")
+func (UnimplementedGiTrimServer) CommitsFromSubRepo(context.Context, *CommitsFromSubRepoRequest) (*CommitsFromSubRepoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CommitsFromSubRepo not implemented")
 }
-func (UnimplementedGiTrimServer) CheckCommitFromSubRepo(context.Context, *CheckCommitFromSubRepoRequest) (*CheckCommitFromSubRepoResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CheckCommitFromSubRepo not implemented")
+func (UnimplementedGiTrimServer) CheckRepoSyncUpToDate(context.Context, *CheckRepoSyncUpToDateRequest) (*CheckRepoSyncUpToDateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckRepoSyncUpToDate not implemented")
+}
+func (UnimplementedGiTrimServer) CheckCommitsFromSubRepo(context.Context, *CheckCommitsFromSubRepoRequest) (*CheckCommitsFromSubRepoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckCommitsFromSubRepo not implemented")
 }
 func (UnimplementedGiTrimServer) GetRepoSync(context.Context, *GetRepoSyncRequest) (*GetRepoSyncResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRepoSync not implemented")
@@ -222,38 +249,56 @@ func _GiTrim_SyncToSubRepo_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _GiTrim_CommitFromSubRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CommitFromSubRepoRequest)
+func _GiTrim_CommitsFromSubRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommitsFromSubRepoRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(GiTrimServer).CommitFromSubRepo(ctx, in)
+		return srv.(GiTrimServer).CommitsFromSubRepo(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: GiTrim_CommitFromSubRepo_FullMethodName,
+		FullMethod: GiTrim_CommitsFromSubRepo_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GiTrimServer).CommitFromSubRepo(ctx, req.(*CommitFromSubRepoRequest))
+		return srv.(GiTrimServer).CommitsFromSubRepo(ctx, req.(*CommitsFromSubRepoRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _GiTrim_CheckCommitFromSubRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CheckCommitFromSubRepoRequest)
+func _GiTrim_CheckRepoSyncUpToDate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckRepoSyncUpToDateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(GiTrimServer).CheckCommitFromSubRepo(ctx, in)
+		return srv.(GiTrimServer).CheckRepoSyncUpToDate(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: GiTrim_CheckCommitFromSubRepo_FullMethodName,
+		FullMethod: GiTrim_CheckRepoSyncUpToDate_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(GiTrimServer).CheckCommitFromSubRepo(ctx, req.(*CheckCommitFromSubRepoRequest))
+		return srv.(GiTrimServer).CheckRepoSyncUpToDate(ctx, req.(*CheckRepoSyncUpToDateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GiTrim_CheckCommitsFromSubRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckCommitsFromSubRepoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GiTrimServer).CheckCommitsFromSubRepo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GiTrim_CheckCommitsFromSubRepo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GiTrimServer).CheckCommitsFromSubRepo(ctx, req.(*CheckCommitsFromSubRepoRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -292,12 +337,16 @@ var GiTrim_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GiTrim_SyncToSubRepo_Handler,
 		},
 		{
-			MethodName: "CommitFromSubRepo",
-			Handler:    _GiTrim_CommitFromSubRepo_Handler,
+			MethodName: "CommitsFromSubRepo",
+			Handler:    _GiTrim_CommitsFromSubRepo_Handler,
 		},
 		{
-			MethodName: "CheckCommitFromSubRepo",
-			Handler:    _GiTrim_CheckCommitFromSubRepo_Handler,
+			MethodName: "CheckRepoSyncUpToDate",
+			Handler:    _GiTrim_CheckRepoSyncUpToDate_Handler,
+		},
+		{
+			MethodName: "CheckCommitsFromSubRepo",
+			Handler:    _GiTrim_CheckCommitsFromSubRepo_Handler,
 		},
 		{
 			MethodName: "GetRepoSync",

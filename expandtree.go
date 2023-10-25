@@ -2,7 +2,6 @@ package gitrim
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -24,24 +23,6 @@ func getFileOperation(fromfilename string, tofilename string) string {
 	}
 }
 
-// FilePatchError is an error containing the information about the invalid file patch.
-type FilePatchError struct {
-	FromFile string
-	ToError  string
-}
-
-func (e *FilePatchError) Error() string {
-	errfs := make([]string, 0, 2)
-	if e.FromFile != "" {
-		errfs = append(errfs, fmt.Sprintf("invalid from path: %s", e.FromFile))
-	}
-	if e.ToError != "" {
-		errfs = append(errfs, fmt.Sprintf("invalid to path: %s", e.ToError))
-	}
-
-	return strings.Join(errfs, "|")
-}
-
 // ExpandTree apply the changes made in the filteredNew tree to filteredOrig tree and apply them to target tree, it returns a new tree.
 func ExpandTree(
 	ctx context.Context,
@@ -59,49 +40,8 @@ func ExpandTree(
 
 	filepatches := filteredPath.FilePatches()
 
-	// collect all invalid file paths into the errors
-	var errs []error
-
-	// first pass, check if the patches are valid.
-	for i, afile := range filepatches {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		fromfile, tofile := afile.Files()
-
-		fromfilename := ""
-		if fromfile != nil {
-			fromfilename = fromfile.Path()
-		}
-		tofilename := ""
-		if tofile != nil {
-			tofilename = tofile.Path()
-		}
-
-		logger.Debug("patch", "idx", i, "operation", getFileOperation(fromfilename, tofilename), "from", fromfilename, "to", tofilename)
-
-		var thiserr *FilePatchError
-		if fromfile != nil && !filter.Filter(strings.Split(fromfilename, "/"), false).IsIn() {
-			if thiserr == nil {
-				thiserr = new(FilePatchError)
-			}
-			thiserr.FromFile = fromfilename
-		}
-		if tofile != nil && !filter.Filter(strings.Split(tofilename, "/"), false).IsIn() {
-			if thiserr == nil {
-				thiserr = new(FilePatchError)
-			}
-			thiserr.ToError = tofilename
-		}
-		if thiserr != nil {
-			errs = append(errs, thiserr)
-		}
-	}
-
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+	if err := CheckFilePatchAgainstFilter(filepatches, filter).ToError(); err != nil {
+		return nil, err
 	}
 
 	editTree, err := newInflightTree(target)

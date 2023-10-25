@@ -7,7 +7,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
-var ErrHexStringTooShort = errors.New("hex encoded byte slice is too short for hash")
+var ErrHexStringNotLength20 = errors.New("hex encoded byte slice doesn't have length 20")
 
 // DecodeHashHex decodes a hex encoded sha1 ([plumbing.Hash]).
 // It differs from [plumbing.NewHash] for [plumbing.NewHash] doesn't
@@ -17,8 +17,8 @@ func DecodeHashHex(str string) (plumbing.Hash, error) {
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	if len(v) < 20 {
-		return plumbing.ZeroHash, ErrHexStringTooShort
+	if len(v) != 20 {
+		return plumbing.ZeroHash, ErrHexStringNotLength20
 	}
 
 	r := plumbing.Hash{}
