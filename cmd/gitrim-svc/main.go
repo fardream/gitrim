@@ -26,8 +26,6 @@ type rootCmd struct {
 	lsRepoSyncCmd   *lsRepoSyncCmd
 	syncToSubCmd    *syncToSubCmd
 	syncToFromCmd   *syncToFromCmd
-
-	webhookCmd *cobra.Command
 }
 
 func newRootCmd() *rootCmd {
@@ -37,19 +35,10 @@ func newRootCmd() *rootCmd {
 			Short: "gitrim webhook service",
 			Args:  cobra.NoArgs,
 		},
-		webhookCmd: &cobra.Command{
-			Use:   "web",
-			Short: "run web server",
-			Args:  cobra.NoArgs,
-		},
 	}
 
 	c.PersistentFlags().StringVarP(&c.configPath, "config", "c", c.configPath, "path to the configuration")
 	c.MarkPersistentFlagFilename("config")
-
-	c.webhookCmd.Run = func(*cobra.Command, []string) {
-		c.runWebhook()
-	}
 
 	c.initRepoSyncCmd = newInitRepoSyncCmd(func(*cobra.Command, []string) {
 		c.runInitRepoSync()
@@ -84,17 +73,6 @@ func (c *rootCmd) runInitRepoSync() {
 
 	resp := cmd.GetOrPanic(s.InitRepoSync(ctx, c.initRepoSyncCmd.request))
 	fmt.Println(PrintProtoText(resp))
-}
-
-func (c *rootCmd) runWebhook() {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
-	config := cmd.GetOrPanic(svc.ParseConfigYAML(cmd.GetOrPanic(os.ReadFile(c.configPath))))
-
-	svc := cmd.GetOrPanic(svc.New(config))
-
-	cmd.OrPanic(svc.Start(ctx))
 }
 
 func (c *rootCmd) runSyncToSub() {
