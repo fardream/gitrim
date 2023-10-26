@@ -42,6 +42,10 @@ func (s *Svc) InitRepoSync(
 	}
 	// create id
 	id := NewRepoSyncId(req.FromRepo, req.FromBranch, req.ToRepo, req.ToBranch)
+	idstr := hex.EncodeToString(id[:])
+
+	idwaiter := s.lockId(idstr)
+	defer s.unlockId(idstr, idwaiter)
 
 	reposync, err := getRepoSyncFromDb(s.mustGetDb(), id)
 	if err != nil {
@@ -52,7 +56,6 @@ func (s *Svc) InitRepoSync(
 		return nil, fmt.Errorf("sync-ing between the two repos already exists")
 	}
 
-	idstr := hex.EncodeToString(id[:])
 	secret, err := newSecret(s.encryptor, id[:])
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to generate secret: %s", err.Error())

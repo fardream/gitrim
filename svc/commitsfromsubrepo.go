@@ -48,12 +48,16 @@ func (s *Svc) CommitsFromSubRepo(ctx context.Context, req *CommitsFromSubRepoReq
 	}
 
 	dopush := !HasOverrides(req) && req.DoPush
+	if dopush {
+		idwaiter := s.lockId(req.Id)
+		defer s.unlockId(req.Id, idwaiter)
+	}
 	newcommits, err := sw.syncToFrom(ctx, dopush, req.AllowPgpSignature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to push: %w", err)
 	}
 
-	if dopush && !HasOverrides(req) {
+	if dopush {
 		id, err := hex.DecodeString(req.Id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode id: %w", err)

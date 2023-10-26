@@ -25,6 +25,13 @@ func (s *Svc) SyncToSubRepo(ctx context.Context, request *SyncToSubRepoRequest) 
 	if err != nil {
 		return nil, err
 	}
+
+	// we need to lock the id if the repos will be updated.
+	if !HasOverrides(request) {
+		idwaiter := s.lockId(request.Id)
+		defer s.unlockId(request.Id, idwaiter)
+	}
+
 	newcommits, err := ws.syncToTo(ctx, request.GetForce())
 	if err != nil {
 		return nil, err
