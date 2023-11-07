@@ -44,7 +44,10 @@ func (s *Svc) InitRepoSync(
 	id := NewRepoSyncId(req.FromRepo, req.FromBranch, req.ToRepo, req.ToBranch)
 	idstr := hex.EncodeToString(id[:])
 
-	idwaiter := s.lockId(idstr)
+	idwaiter, err := s.lockId(ctx, idstr)
+	if err != nil {
+		return nil, err
+	}
 	defer s.unlockId(idstr, idwaiter)
 
 	reposync, err := getRepoSyncFromDb(s.mustGetDb(), id)

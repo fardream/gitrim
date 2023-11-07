@@ -4,7 +4,6 @@ package svc
 import (
 	"crypto/cipher"
 	"net/http"
-	"sync"
 
 	"go.etcd.io/bbolt"
 )
@@ -28,8 +27,7 @@ type Svc struct {
 
 	encryptor cipher.AEAD
 
-	dbmutex sync.Mutex
-	idmutex map[string]*waitingChan
+	idmutex chan map[string]*waitingChan
 }
 
 var _ GiTrimServer = (*Svc)(nil)

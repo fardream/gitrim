@@ -49,7 +49,10 @@ func (s *Svc) CommitsFromSubRepo(ctx context.Context, req *CommitsFromSubRepoReq
 
 	dopush := !HasOverrides(req) && req.DoPush
 	if dopush {
-		idwaiter := s.lockId(req.Id)
+		idwaiter, err := s.lockId(ctx, req.Id)
+		if err != nil {
+			return nil, err
+		}
 		defer s.unlockId(req.Id, idwaiter)
 	}
 	newcommits, err := sw.syncToFrom(ctx, dopush, req.AllowPgpSignature)

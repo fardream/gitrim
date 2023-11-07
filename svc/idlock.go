@@ -19,6 +19,8 @@
 
 package svc
 
+import "context"
+
 // emptyForChan is just that
 type emptyForChan struct{}
 
@@ -48,34 +50,55 @@ func (w *waitingChan) Done() <-chan emptyForChan {
 //     until the waitingChan is closed. Go to step 1.
 //  4. if the id doesn't have waitingChan, create a new waitingChan,
 //     set it to the id, unlock the map, and return the closer
-func (s *Svc) lockId(id string) chan<- emptyForChan {
-	s.dbmutex.Lock()
-	if s.idmutex == nil {
-		s.idmutex = make(map[string]*waitingChan)
+func (s *Svc) lockId(ctx context.Context, id string) (chan<- emptyForChan, error) {
+	var idmutex map[string]*waitingChan
+	select {
+	// locak idmutex
+	case idmutex = <-s.idmutex:
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 
 	var result chan<- emptyForChan
 
-	m, found := s.idmutex[id]
+	m, found := idmutex[id]
 waitloop:
 	for {
 		if !found {
 			break waitloop
 		}
-		s.dbmutex.Unlock()
-		<-m.Done()
-		s.dbmutex.Lock()
-		m, found = s.idmutex[id]
+
+		// unlock idmutex
+		s.idmutex <- idmutex
+
+		// wait on done
+		select {
+		case <-m.Done():
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+
+		// lock idmutex again
+		select {
+		case idmutex = <-s.idmutex:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		m, found = idmutex[id]
 	}
 
-	s.idmutex[id], result = newWaiter()
-	s.dbmutex.Unlock()
-	return result
+	idmutex[id], result = newWaiter()
+
+	s.idmutex <- idmutex
+
+	return result, nil
 }
 
 func (s *Svc) unlockId(id string, closer chan<- emptyForChan) {
-	s.dbmutex.Lock()
-	delete(s.idmutex, id)
+	// lock
+	idmutex := <-s.idmutex
+	delete(idmutex, id)
 	close(closer)
-	s.dbmutex.Unlock()
+	// unlock
+	s.idmutex <- idmutex
 }
