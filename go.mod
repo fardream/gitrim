@@ -8,7 +8,7 @@ require (
 	github.com/goccy/go-yaml v1.11.3
 	github.com/google/go-cmp v0.6.0
 	github.com/spf13/cobra v1.8.0
-	go.etcd.io/bbolt v1.3.9
+	go.etcd.io/bbolt v1.3.10
 	google.golang.org/grpc v1.63.2
 	google.golang.org/protobuf v1.34.0
 )
