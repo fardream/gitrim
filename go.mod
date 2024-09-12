@@ -1,6 +1,7 @@
 module github.com/fardream/gitrim
 
 go 1.21.0
+toolchain go1.22.5
 
 require (
 	github.com/go-git/go-billy/v5 v5.5.0
@@ -8,7 +9,7 @@ require (
 	github.com/goccy/go-yaml v1.11.3
 	github.com/google/go-cmp v0.6.0
 	github.com/spf13/cobra v1.8.1
-	go.etcd.io/bbolt v1.3.10
+	go.etcd.io/bbolt v1.3.11
 	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2
 )
