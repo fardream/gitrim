@@ -6,7 +6,7 @@ toolchain go1.22.9
 require (
 	github.com/go-git/go-billy/v5 v5.6.0
 	github.com/go-git/go-git/v5 v5.12.0
-	github.com/goccy/go-yaml v1.15.1
+	github.com/goccy/go-yaml v1.15.5
 	github.com/google/go-cmp v0.6.0
 	github.com/spf13/cobra v1.8.1
 	go.etcd.io/bbolt v1.3.11
