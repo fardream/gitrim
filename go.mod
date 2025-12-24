@@ -9,7 +9,7 @@ require (
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/goccy/go-yaml v1.18.0
 	github.com/google/go-cmp v0.7.0
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.4.3
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.10
